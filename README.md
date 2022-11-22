@@ -1,2 +1,2 @@
-# JaxLM
-Large language model training in JAX with cloud TPU pod support
+# EasyLM
+Easy to use large language models in JAX/Flax with PJIT support on cloud TPU pods.
