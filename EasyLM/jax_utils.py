@@ -293,17 +293,25 @@ def flatten_tree(xs, keep_empty_nodes=False, is_leaf=None, sep=None):
     return _flatten(xs, ())
 
 
-def match_parition_rules(rules, params):
-    flattened_params = flatten_tree(params, sep='/')
-    id_to_name_map = {
-        id(val): key for key, val in flattened_params.items()
-    }
+def named_tree_map(f, tree, is_leaf=None, sep=None):
+    """ An extended version of jax.tree_util.tree_map, where the mapped function
+        f takes both the name (path) and the tree leaf as input.
+    """
+    flattened_tree = flatten_tree(tree, is_leaf=is_leaf, sep=sep)
+    id_to_name = {id(val): key for key, val in flattened_tree.items()}
+    def map_fn(leaf):
+        name = id_to_name[id(leaf)]
+        return f(name, leaf)
+    return jax.tree_util.tree_map(map_fn, tree)
 
-    def get_parition_spec(leaf):
-        name = id_to_name_map[id(leaf)]
+
+def match_parition_rules(rules, params):
+    """ Returns a pytree of PartitionSpec according to rules. Supports handling
+        Flax TrainState and Optax optimizer state.
+    """
+    def get_parition_spec(name, leaf):
         for rule, ps in rules:
             if re.search(rule, name) is not None:
                 return ps
         raise ValueError(f'Parition rule not found for param: {name}')
-
-    return jax.tree_util.tree_map(get_parition_spec, params)
+    return named_tree_map(get_parition_spec, params, sep='/')
