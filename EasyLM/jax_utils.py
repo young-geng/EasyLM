@@ -242,8 +242,9 @@ def get_2d_sincos_pos_embed(embed_dim, length):
 
 
 def flatten_tree(xs, keep_empty_nodes=False, is_leaf=None, sep=None):
-    """ A stronger version of flax.traverse_util.flatten_dict, suppoerts
-        dict, tuple, list and TrainState.
+    """ A stronger version of flax.traverse_util.flatten_dict, supports
+        dict, tuple, list and TrainState. Tuple and list indices will be
+        converted to strings.
     """
     tree_node_classes = (FrozenDict, dict, tuple, list, TrainState)
     if not isinstance(xs, tree_node_classes):
@@ -306,4 +307,3 @@ def match_parition_rules(rules, params):
         raise ValueError(f'Parition rule not found for param: {name}')
 
     return jax.tree_util.tree_map(get_parition_spec, params)
-
