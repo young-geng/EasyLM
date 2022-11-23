@@ -29,7 +29,6 @@ class C4Dataset(object):
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer)
         self.dataset = load_dataset('c4', 'en', split=self.config.split, streaming=True)
 
-
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
         tokens = []
@@ -42,3 +41,12 @@ class C4Dataset(object):
                     )
                 }
                 tokens = tokens[chunk_size:]
+
+    @property
+    def vocab_size(self):
+        """ Reserve some extra tokens for downstream tasks. """
+        return int(np.ceil(self.tokenizer.vocab_size / 1024) + 1) * 1024
+
+    @property
+    def seq_length(self):
+        return self.config.seq_length

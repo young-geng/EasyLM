@@ -17,6 +17,7 @@ from absl import logging
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from ml_collections.config_flags import config_flags
+from flax.training.checkpoints import save_checkpoint
 
 from .jax_utils import init_rng
 
@@ -41,9 +42,9 @@ class WandBLogger(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.online = False
-        config.prefix = "M3AE"
-        config.project = "m3ae"
-        config.output_dir = "/tmp/m3ae"
+        config.prefix = "EasyLM"
+        config.project = "easy_lm"
+        config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
         config.random_delay = 0.0
         config.experiment_id = config_dict.placeholder(str)
@@ -118,13 +119,21 @@ class WandBLogger(object):
 
     def save_pickle(self, obj, filename):
         if self.enable:
-            with open(os.path.join(self.config.output_dir, filename), "wb") as fout:
-                pickle.dump(obj, fout)
-
             if self.config.gcs_output_dir != "":
                 path = os.path.join(self.config.gcs_output_dir, filename)
                 with gcsfs.GCSFileSystem().open(path, "wb") as fout:
                     pickle.dump(obj, fout)
+            else:
+                with open(os.path.join(self.config.output_dir, filename), "wb") as fout:
+                    pickle.dump(obj, fout)
+
+    def save_checkpoint(self, *args, **kwargs):
+        if self.enable:
+            if self.config.gcs_output_dir != "":
+                ckpt_dir = os.path.join(self.config.gcs_output_dir, 'checkpoint')
+            else:
+                ckpt_dir = os.path.join(self.config.output_dir, 'checkpoint')
+            save_checkpoint(ckpt_dir, *args, **kwargs)
 
     @property
     def experiment_id(self):

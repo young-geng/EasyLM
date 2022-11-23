@@ -120,6 +120,46 @@ class JaxMesh(object):
         return self._device_count
 
 
+class ShardingHelper(object):
+    """ A helper utility that handles gathering sharded pytree to host and
+        shard host pytree to devices that supports multi-host environment.
+        This utility does gather and shard one by one to avoid OOM on device.
+    """
+
+    def __init__(self, partition_specs):
+        self.partition_specs = partition_specs
+        def gather_tensor(partition_spec):
+            if partition_spec is None:
+                import pdb; pdb.set_trace()
+            return pjit(
+                lambda x: x,
+                in_axis_resources=partition_spec,
+                out_axis_resources=None
+            )
+
+        def shard_tensor(partition_spec):
+            return pjit(
+                lambda x: x,
+                in_axis_resources=None,
+                out_axis_resources=partition_spec
+            )
+
+        self.gather_fns = jax.tree_util.tree_map(gather_tensor, partition_specs)
+        self.shard_fns = jax.tree_util.tree_map(shard_tensor, partition_specs)
+
+    def get(self, tree):
+        def get_fn(gather_fn, tensor):
+            return jax.device_get(gather_fn(tensor))
+
+        return jax.tree_util.tree_map(get_fn, self.gather_fns, tree)
+
+    def put(self, tree):
+        def put_fn(shard_fn, tensor):
+            return shard_fn(tensor).block_until_ready()
+
+        return jax.tree_util.tree_map(put_fn, self.shard_fns, tree)
+
+
 def wrap_function_with_rng(rng):
     """ To be used as decorator, automatically bookkeep a RNG for the wrapped function. """
     def wrap_function(function):
@@ -309,9 +349,9 @@ def match_parition_rules(rules, params):
     """ Returns a pytree of PartitionSpec according to rules. Supports handling
         Flax TrainState and Optax optimizer state.
     """
-    def get_parition_spec(name, leaf):
+    def get_partition_spec(name, leaf):
         for rule, ps in rules:
             if re.search(rule, name) is not None:
                 return ps
         raise ValueError(f'Parition rule not found for param: {name}')
-    return named_tree_map(get_parition_spec, params, sep='/')
+    return named_tree_map(get_partition_spec, params, sep='/')

@@ -259,6 +259,34 @@ class GPTJConfig(PretrainedConfig):
 
         return config
 
+    @staticmethod
+    def get_partition_rules():
+        """ Parition rules for GPTJ. Note that these rules are orderd, so that
+            the beginning rules match first. It is important to use
+            PartitionSpec() instead of None here because JAX does not treat
+            None as a pytree leaf.
+        """
+        return (
+            ('transformer/wte/embedding', PartitionSpec('mp', None)),
+            ('attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec(None, 'mp')),
+            ('attn/out_proj/kernel', PartitionSpec('mp', None)),
+            ('mlp/fc_in/kernel', PartitionSpec(None, 'mp')),
+            ('mlp/fc_in/bias', PartitionSpec('mp')),
+            ('mlp/fc_out/kernel', PartitionSpec('mp', None)),
+            ('mlp/fc_out/bias', PartitionSpec()),
+            ('ln_[0-9]+/bias', PartitionSpec()),
+            ('[0-9]+/ln_[0-9]+/scale', PartitionSpec()),
+            ('ln_f/bias', PartitionSpec()),
+            ('ln_f/scale', PartitionSpec()),
+            ('lm_head/kernel', PartitionSpec(None, 'mp')),
+            ('lm_head/bias', PartitionSpec('mp')),
+            ('.*', PartitionSpec()),
+        )
+
+    @staticmethod
+    def get_weight_decay_exclusions():
+        return ('transformer/wte/embedding', 'bias')
+
 
 class FlaxGPTJAttention(nn.Module):
     config: GPTJConfig
@@ -866,25 +894,3 @@ append_call_sample_docstring(
     FlaxCausalLMOutput,
     _CONFIG_FOR_DOC,
 )
-
-
-def get_parition_rules():
-    """ Parition rules for GPTJ. Note that these rules are orderd, so that
-        the beginning rules match first.
-    """
-    return [
-        ('transformer/wte/embedding', PartitionSpec('mp', None)),
-        ('attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec(None, 'mp')),
-        ('attn/out_proj/kernel', PartitionSpec('mp', None)),
-        ('mlp/fc_in/kernel', PartitionSpec(None, 'mp')),
-        ('mlp/fc_in/bias', PartitionSpec('mp')),
-        ('mlp/fc_out/kernel', PartitionSpec('mp', None)),
-        ('mlp/fc_out/bias', None),
-        ('ln_[0-9]+/bias', None),
-        ('[0-9]+/ln_[0-9]+/scale', None),
-        ('ln_f/bias', None),
-        ('ln_f/scale', None),
-        ('lm_head/kernel', PartitionSpec(None, 'mp')),
-        ('lm_head/bias', PartitionSpec('mp')),
-        ('.*', None),
-    ]
