@@ -181,13 +181,6 @@ def next_rng(*args, **kwargs):
     return jax_utils_rng(*args, **kwargs)
 
 
-def get_metrics(metrics, unreplicate=False):
-    if unreplicate:
-        metrics = flax.jax_utils.unreplicate(metrics)
-    metrics = jax.device_get(metrics)
-    return {key: float(val) for key, val in metrics.items()}
-
-
 def mse_loss(val, target):
     return jnp.mean(jnp.square(val - target))
 
@@ -200,16 +193,6 @@ def cross_entropy_loss(logits, labels, smoothing_factor=0.):
         labels = labels * (1. - smoothing_factor) + smoothing_factor / num_classes
     logp = jax.nn.log_softmax(logits, axis=-1)
     return -jnp.mean(jnp.sum(logp * labels, axis=-1))
-
-
-@partial(jax.pmap, axis_name="pmap", donate_argnums=0)
-def sync_state_across_devices(state):
-    i = jax.lax.axis_index("pmap")
-
-    def select(x):
-        return jax.lax.psum(jnp.where(i == 0, x, jnp.zeros_like(x)), "pmap")
-
-    return jax.tree_map(select, state)
 
 
 def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
@@ -234,51 +217,6 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
     )
     accuracy = jnp.mean(jnp.sum(correct, axis=-1) / valid_text_length)
     return loss, accuracy
-
-
-def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
-    assert embed_dim % 2 == 0
-    omega = jnp.arange(embed_dim // 2, dtype=jnp.float32)
-    omega /= embed_dim / 2.
-    omega = 1. / 10000**omega  # (D/2,)
-
-    pos = pos.reshape(-1)  # (M,)
-    out = jnp.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
-
-    emb_sin = jnp.sin(out) # (M, D/2)
-    emb_cos = jnp.cos(out) # (M, D/2)
-
-    emb = jnp.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
-    return emb
-
-
-def get_1d_sincos_pos_embed(embed_dim, length):
-    return jnp.expand_dims(
-        get_1d_sincos_pos_embed_from_grid(
-            embed_dim, jnp.arange(length, dtype=jnp.float32)
-        ),
-        0
-    )
-
-
-def get_2d_sincos_pos_embed(embed_dim, length):
-    grid_size = int(length ** 0.5)
-    assert grid_size * grid_size == length
-    def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
-        assert embed_dim % 2 == 0
-        # use half of dimensions to encode grid_h
-        emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0])  # (H*W, D/2)
-        emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])  # (H*W, D/2)
-        emb = jnp.concatenate([emb_h, emb_w], axis=1) # (H*W, D)
-        return emb
-
-    grid_h = jnp.arange(grid_size, dtype=jnp.float32)
-    grid_w = jnp.arange(grid_size, dtype=jnp.float32)
-    grid = jnp.meshgrid(grid_w, grid_h)  # here w goes first
-    grid = jnp.stack(grid, axis=0)
-    grid = grid.reshape([2, 1, grid_size, grid_size])
-    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
-    return jnp.expand_dims(pos_embed, 0)
 
 
 def flatten_tree(xs, keep_empty_nodes=False, is_leaf=None, sep=None):

@@ -23,16 +23,13 @@ import optax
 
 from ..data import C4Dataset
 from ..jax_utils import (
-    JaxRNG, get_metrics, next_rng, JaxMesh, match_parition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map, ShardingHelper
+    JaxRNG, ShardingHelper, JaxMesh, next_rng, match_parition_rules,
+    cross_entropy_loss_and_accuracy, named_tree_map
 )
 from ..utils import (
-    WandBLogger, define_flags_with_default, get_user_flags, load_pickle,
-    set_random_seed
+    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed
 )
-from ..models.gptj import (
-    GPTJConfig, FlaxGPTJForCausalLMModule
-)
+from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
 
 
 FLAGS_DEF = define_flags_with_default(
