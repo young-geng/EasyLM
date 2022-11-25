@@ -39,7 +39,7 @@ FLAGS_DEF = define_flags_with_default(
     opt_b2=0.95,
     weight_decay=1e-3,
     total_steps=10000,
-    mp_mesh_dim=4,
+    mp_mesh_dim=1,
     load_checkpoint='',
     log_freq=50,
     save_model_freq=0,
@@ -65,10 +65,14 @@ def main(argv):
     dataset = C4Dataset(FLAGS.data)
     seq_length = dataset.config.seq_length
 
-    model_config = GPTJConfig.from_pretrained('EleutherAI/gpt-j-6B')
-    model_config.update(FLAGS.gptj)
-    model_config.vocab_size = dataset.vocab_size
-    model = FlaxGPTJForCausalLMModule(model_config)
+    gptj_config = GPTJConfig.from_pretrained('EleutherAI/gpt-j-6B')
+    gptj_config.update(FLAGS.gptj)
+    gptj_config.update(dict(
+        bos_token_id=dataset.tokenizer.bos_token_id,
+        eos_token_id=dataset.tokenizer.eos_token_id,
+    ))
+    gptj_config.vocab_size = dataset.vocab_size
+    model = FlaxGPTJForCausalLMModule(gptj_config)
 
     def get_weight_decay_mask(params):
         def decay(name, _):
@@ -102,7 +106,11 @@ def main(argv):
 
     def train_step(train_state, tokens):
         def loss_and_accuracy(params):
-            logits = model.apply(params, tokens).logits
+            bos_tokens = jnp.full(
+                (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
+            )
+            inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
+            logits = model.apply(params, inputs).logits
             return cross_entropy_loss_and_accuracy(logits, tokens)
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
         (loss, accuracy), grads = grad_fn(train_state.params)
