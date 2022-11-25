@@ -57,9 +57,10 @@ FLAGS = absl.flags.FLAGS
 
 
 def main(argv):
+    FLAGS = absl.flags.FLAGS
     if FLAGS.initialize_jax_distributed:
         jax.distributed.initialize()
-    FLAGS = absl.flags.FLAGS
+
     variant = get_user_flags(FLAGS, FLAGS_DEF)
     logger = WandBLogger(
         config=FLAGS.logger,
