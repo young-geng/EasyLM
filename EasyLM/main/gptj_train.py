@@ -188,7 +188,7 @@ def main(argv):
                 logger.log(log_metrics)
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 
-            if FLAGS.save_model_freq > 0 and step % FLAGS.save_model_freq == 0:
+            if FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
                 logger.save_checkpoint(
                     sharding_helper.get(train_state), step=train_state.step,
                     overwrite=True
