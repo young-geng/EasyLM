@@ -34,12 +34,16 @@ from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
 
 FLAGS_DEF = define_flags_with_default(
     seed=42,
-    lr=1e-4,
+    initialize_jax_distributed=False,
+    mp_mesh_dim=1,
+    total_steps=10000,
+    lr_init_value=0.0,
+    lr_end_value=0.0,
+    lr_peak_value=1.5e-4,
+    lr_warmup_steps=0,
     opt_b1=0.9,
     opt_b2=0.95,
-    weight_decay=1e-3,
-    total_steps=10000,
-    mp_mesh_dim=1,
+    weight_decay=5e-2,
     load_checkpoint='',
     log_freq=50,
     save_model_freq=0,
@@ -53,6 +57,8 @@ FLAGS = absl.flags.FLAGS
 
 
 def main(argv):
+    if FLAGS.initialize_jax_distributed:
+        jax.distributed.initialize()
     FLAGS = absl.flags.FLAGS
     variant = get_user_flags(FLAGS, FLAGS_DEF)
     logger = WandBLogger(
@@ -82,8 +88,16 @@ def main(argv):
             return True
         return named_tree_map(decay, params, sep='/')
 
+    learning_rate = optax.warmup_cosine_decay_schedule(
+        init_value=FLAGS.lr_init_value,
+        peak_value=FLAGS.lr_peak_value,
+        warmup_steps=FLAGS.lr_warmup_steps,
+        decay_steps=FLAGS.total_steps,
+        end_value=FLAGS.lr_end_value,
+    )
+
     optimizer = optax.adamw(
-        learning_rate=FLAGS.lr, b1=FLAGS.opt_b1, b2=FLAGS.opt_b2,
+        learning_rate=learning_rate, b1=FLAGS.opt_b1, b2=FLAGS.opt_b2,
         weight_decay=FLAGS.weight_decay, mask=get_weight_decay_mask
     )
 
@@ -97,10 +111,7 @@ def main(argv):
             input_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             position_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             attention_mask=jnp.ones((4, seq_length), dtype=jnp.int32),
-            rngs={
-                'params': rng_generator(),
-                'dropout': rng_generator(),
-            }
+            rngs=rng_generator(gptj_config.rng_keys()),
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
@@ -115,7 +126,11 @@ def main(argv):
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
         (loss, accuracy), grads = grad_fn(train_state.params)
         train_state = train_state.apply_gradients(grads=grads)
-        metrics = {'loss': loss, 'accuracy': accuracy}
+        metrics = dict(
+            loss=loss,
+            accuracy=accuracy,
+            learning_rate=learning_rate(train_state.step),
+        )
         return train_state, metrics
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
@@ -135,7 +150,7 @@ def main(argv):
         train_step,
         in_axis_resources=(train_state_partition, PS('dp')),
         out_axis_resources=(train_state_partition, None),
-        donate_argnums=0,
+        donate_argnums=(0, 1),
     )
 
     if FLAGS.load_checkpoint != '':
@@ -164,6 +179,7 @@ def main(argv):
 
         for step, batch in zip(step_counter, dataset):
             tokens = mesh.get_local_array_slice(batch['tokens'], 0, 'dp')
+
             train_state, metrics = sharded_train_step(train_state, tokens)
 
             if step % FLAGS.log_freq == 0:
@@ -173,13 +189,10 @@ def main(argv):
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 
             if FLAGS.save_model_freq > 0 and step % FLAGS.save_model_freq == 0:
-                checkpoint_state = sharding_helper.get(train_state)
-                if mesh.process_id == 0:
-                    logger.save_checkpoint(
-                        checkpoint_state, step=train_state.step,
-                        overwrite=True
-                    )
-                del checkpoint_state
+                logger.save_checkpoint(
+                    sharding_helper.get(train_state), step=train_state.step,
+                    overwrite=True
+                )
 
         if FLAGS.save_model_freq > 0:
             logger.save_checkpoint(

@@ -287,6 +287,10 @@ class GPTJConfig(PretrainedConfig):
     def get_weight_decay_exclusions():
         return ('transformer/wte/embedding', 'bias')
 
+    @staticmethod
+    def rng_keys():
+        return ('params', 'dropout')
+
 
 class FlaxGPTJAttention(nn.Module):
     config: GPTJConfig
@@ -821,10 +825,14 @@ class FlaxGPTJForCausalLMModule(nn.Module):
         output_hidden_states: bool = False,
         return_dict: bool = True,
     ):
+        batch_size, seq_length = input_ids.shape
         if attention_mask is None:
             attention_mask = jnp.ones_like(input_ids)
         if position_ids is None:
-            position_ids = attention_mask.cumsum(axis=-1) - 1
+            position_ids = jnp.broadcast_to(
+                jnp.expand_dims(jnp.arange(seq_length, dtype=jnp.int32), 0),
+                (batch_size, seq_length)
+            )
 
         outputs = self.transformer(
             input_ids,
