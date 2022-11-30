@@ -45,8 +45,8 @@ class JaxRNG(object):
             return {key: val for key, val in zip(keys, split_rngs[1:])}
 
 
-class JaxMesh(object):
-    """ A helper function for multihost mesh paritioned programs. """
+class MeshHelper(object):
+    """ A helper function for multihost mesh partitioned programs. """
 
     def __init__(self, axis_names, axis_shape):
         assert len(axis_shape) == len(axis_names)
@@ -279,13 +279,16 @@ def named_tree_map(f, tree, is_leaf=None, sep=None):
     return jax.tree_util.tree_map(map_fn, tree)
 
 
-def match_parition_rules(rules, params):
+def match_partition_rules(rules, params):
     """ Returns a pytree of PartitionSpec according to rules. Supports handling
         Flax TrainState and Optax optimizer state.
     """
     def get_partition_spec(name, leaf):
+        if len(leaf.shape) == 0:
+            """ Don't partition scalar values. """
+            return None
         for rule, ps in rules:
             if re.search(rule, name) is not None:
                 return ps
-        raise ValueError(f'Parition rule not found for param: {name}')
+        raise ValueError(f'Partition rule not found for param: {name}')
     return named_tree_map(get_partition_spec, params, sep='/')

@@ -23,7 +23,7 @@ import optax
 
 from ..data import C4Dataset
 from ..jax_utils import (
-    JaxRNG, ShardingHelper, JaxMesh, next_rng, match_parition_rules,
+    JaxRNG, ShardingHelper, MeshHelper, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map
 )
 from ..utils import (
@@ -37,13 +37,12 @@ FLAGS_DEF = define_flags_with_default(
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
     total_steps=10000,
-    lr_init_value=0.0,
-    lr_end_value=0.0,
-    lr_peak_value=1.5e-4,
-    lr_warmup_steps=0,
+    lr=0.01,
+    lr_warmup_steps=10000,
     opt_b1=0.9,
-    opt_b2=0.95,
-    weight_decay=5e-2,
+    opt_b2=0.99,
+    clip_gradient=1.0,
+    weight_decay=0.01,
     load_checkpoint='',
     log_freq=50,
     save_model_freq=0,
@@ -81,7 +80,7 @@ def main(argv):
     gptj_config.vocab_size = dataset.vocab_size
     model = FlaxGPTJForCausalLMModule(gptj_config)
 
-    def get_weight_decay_mask(params):
+    def weight_decay_mask(params):
         def decay(name, _):
             for rule in GPTJConfig.get_weight_decay_exclusions():
                 if re.search(rule, name) is not None:
@@ -89,22 +88,27 @@ def main(argv):
             return True
         return named_tree_map(decay, params, sep='/')
 
-    learning_rate = optax.warmup_cosine_decay_schedule(
-        init_value=FLAGS.lr_init_value,
-        peak_value=FLAGS.lr_peak_value,
-        warmup_steps=FLAGS.lr_warmup_steps,
-        decay_steps=FLAGS.total_steps,
-        end_value=FLAGS.lr_end_value,
-    )
+    def learning_rate(step):
+        lr_multiplier = FLAGS.lr / 0.01
+        return lr_multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
 
-    optimizer = optax.adamw(
-        learning_rate=learning_rate, b1=FLAGS.opt_b1, b2=FLAGS.opt_b2,
-        weight_decay=FLAGS.weight_decay, mask=get_weight_decay_mask
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(FLAGS.clip_gradient),
+        optax.adamw(
+            learning_rate=learning_rate,
+            b1=FLAGS.opt_b1,
+            b2=FLAGS.opt_b2,
+            weight_decay=FLAGS.weight_decay,
+            mask=weight_decay_mask
+        )
     )
 
     device_count = jax.device_count()
     assert device_count % FLAGS.mp_mesh_dim == 0
-    mesh = JaxMesh(('dp', 'mp'), (device_count // FLAGS.mp_mesh_dim, FLAGS.mp_mesh_dim))
+    mesh = MeshHelper(
+        ('dp', 'mp'),
+        (device_count // FLAGS.mp_mesh_dim, FLAGS.mp_mesh_dim)
+    )
 
     def init_fn(rng):
         rng_generator = JaxRNG(rng)
@@ -135,7 +139,7 @@ def main(argv):
         return train_state, metrics
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
-    train_state_partition = match_parition_rules(
+    train_state_partition = match_partition_rules(
         GPTJConfig.get_partition_rules(), train_state_shapes
     )
 
@@ -152,6 +156,12 @@ def main(argv):
         in_axis_resources=(train_state_partition, PS('dp')),
         out_axis_resources=(train_state_partition, None),
         donate_argnums=(0, 1),
+    )
+
+    shard_data = pjit(
+        lambda x: x,
+        in_axis_resources=None,
+        out_axis_resources=PS('dp')
     )
 
     if FLAGS.load_checkpoint != '':
@@ -179,8 +189,7 @@ def main(argv):
         step_counter = trange(start_step, FLAGS.total_steps, ncols=0)
 
         for step, batch in zip(step_counter, dataset):
-            tokens = mesh.get_local_array_slice(batch['tokens'], 0, 'dp')
-
+            tokens = shard_data(batch['tokens'])
             train_state, metrics = sharded_train_step(train_state, tokens)
 
             if step % FLAGS.log_freq == 0:
