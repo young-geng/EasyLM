@@ -35,7 +35,6 @@ class C4Dataset(object):
         while True:
             tokens = []
             for example in self._dataset:
-                tokens.append(self._tokenizer.bos_token_id)
                 tokens.extend(self._tokenizer.encode(example['text']))
                 tokens.append(self._tokenizer.eos_token_id)
                 while len(tokens) > chunk_size:

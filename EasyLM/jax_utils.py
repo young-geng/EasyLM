@@ -219,7 +219,7 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
     return loss, accuracy
 
 
-def flatten_tree(xs, keep_empty_nodes=False, is_leaf=None, sep=None):
+def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be
         converted to strings.
@@ -262,10 +262,6 @@ def flatten_tree(xs, keep_empty_nodes=False, is_leaf=None, sep=None):
             is_empty = False
             path = prefix + (key, )
             result.update(_flatten(value, path))
-        if keep_empty_nodes and is_empty:
-            if prefix == ():  # when the whole input is empty
-                return {}
-            return {_key(prefix): empty_node}
         return result
 
     return _flatten(xs, ())
