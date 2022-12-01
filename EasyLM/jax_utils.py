@@ -286,7 +286,7 @@ def match_partition_rules(rules, params):
     def get_partition_spec(name, leaf):
         if len(leaf.shape) == 0:
             """ Don't partition scalar values. """
-            return None
+            return PS()
         for rule, ps in rules:
             if re.search(rule, name) is not None:
                 return ps
