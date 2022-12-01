@@ -46,6 +46,7 @@ FLAGS_DEF = define_flags_with_default(
     load_checkpoint='',
     log_freq=50,
     save_model_freq=0,
+    save_model_keep=1,
     data=C4Dataset.get_default_config(),
     gptj=GPTJConfig.get_default_config(),
     logger=WandBLogger.get_default_config(),
@@ -182,8 +183,8 @@ def main(argv):
 
         if FLAGS.save_model_freq > 0:
             logger.save_checkpoint(
-                sharding_helper.get(train_state),
-                step=train_state.step, overwrite=True
+                sharding_helper.get(train_state), step=train_state.step,
+                overwrite=True, keep=FLAGS.save_model_keep,
             )
 
         step_counter = trange(start_step, FLAGS.total_steps, ncols=0)
@@ -201,7 +202,7 @@ def main(argv):
             if FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
                 logger.save_checkpoint(
                     sharding_helper.get(train_state), step=train_state.step,
-                    overwrite=True
+                    overwrite=True, keep=FLAGS.save_model_keep,
                 )
 
         if FLAGS.save_model_freq > 0:
