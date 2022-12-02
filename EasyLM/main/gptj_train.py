@@ -121,13 +121,17 @@ def main(argv):
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
-    def train_step(train_state, tokens):
+    def train_step(train_state, rng, tokens):
+        rng_generator = JaxRNG(rng)
         def loss_and_accuracy(params):
             bos_tokens = jnp.full(
                 (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
             )
             inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
-            logits = model.apply(params, inputs).logits
+            logits = model.apply(
+                params, inputs, deterministic=False,
+                rngs=rng_generator(gptj_config.rng_keys()),
+            ).logits
             return cross_entropy_loss_and_accuracy(logits, tokens)
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
         (loss, accuracy), grads = grad_fn(train_state.params)
@@ -137,7 +141,7 @@ def main(argv):
             accuracy=accuracy,
             learning_rate=learning_rate(train_state.step),
         )
-        return train_state, metrics
+        return train_state, rng_generator(), metrics
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
@@ -148,20 +152,20 @@ def main(argv):
 
     sharded_init_fn = pjit(
         init_fn,
-        in_axis_resources=(None,),
+        in_axis_resources=PS(),
         out_axis_resources=train_state_partition
     )
 
     sharded_train_step = pjit(
         train_step,
-        in_axis_resources=(train_state_partition, PS('dp')),
-        out_axis_resources=(train_state_partition, None),
+        in_axis_resources=(train_state_partition, PS(), PS('dp')),
+        out_axis_resources=(train_state_partition, PS(), PS()),
         donate_argnums=(0, 1),
     )
 
     shard_data = pjit(
         lambda x: x,
-        in_axis_resources=None,
+        in_axis_resources=PS(),
         out_axis_resources=PS('dp')
     )
 
@@ -187,11 +191,15 @@ def main(argv):
                 overwrite=True, keep=FLAGS.save_model_keep,
             )
 
+        sharded_rng = next_rng()
+
         step_counter = trange(start_step, FLAGS.total_steps, ncols=0)
 
         for step, batch in zip(step_counter, dataset):
             tokens = shard_data(batch['tokens'])
-            train_state, metrics = sharded_train_step(train_state, tokens)
+            train_state, sharded_rng, metrics = sharded_train_step(
+                train_state, sharded_rng, tokens
+            )
 
             if step % FLAGS.log_freq == 0:
                 log_metrics = {"step": step}

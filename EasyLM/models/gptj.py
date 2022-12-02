@@ -217,6 +217,8 @@ class GPTJConfig(PretrainedConfig):
         tie_word_embeddings=False,
         gradient_checkpointing=True,
         n_real_tokens=None,
+        fcm_min_ratio=0.0,
+        fcm_max_ratio=0.0,
         **kwargs
     ):
         self.vocab_size = vocab_size
@@ -236,6 +238,8 @@ class GPTJConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.gradient_checkpointing = gradient_checkpointing
         self.n_real_tokens = n_real_tokens
+        self.fcm_min_ratio = fcm_min_ratio
+        self.fcm_max_ratio = fcm_max_ratio
         if self.n_real_tokens is None:
             self.n_real_tokens = self.vocab_size
 
@@ -289,7 +293,7 @@ class GPTJConfig(PretrainedConfig):
 
     @staticmethod
     def rng_keys():
-        return ('params', 'dropout')
+        return ('params', 'dropout', 'fcm')
 
 
 class FlaxGPTJAttention(nn.Module):
@@ -370,6 +374,7 @@ class FlaxGPTJAttention(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask=None,
     ):
 
         query = self.q_proj(hidden_states)
@@ -419,7 +424,7 @@ class FlaxGPTJAttention(nn.Module):
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
 
         attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-        attention_mask = combine_masks(attention_mask, causal_mask)
+        attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
 
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
@@ -502,6 +507,7 @@ class FlaxGPTJBlock(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask=None,
     ):
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
@@ -512,6 +518,7 @@ class FlaxGPTJBlock(nn.Module):
             deterministic=deterministic,
             init_cache=init_cache,
             output_attentions=output_attentions,
+            fcm_mask=fcm_mask,
         )
         attn_output = attn_outputs[0]
 
@@ -701,6 +708,23 @@ class FlaxGPTJBlockCollection(nn.Module):
         all_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
 
+        if not deterministic and self.config.fcm_max_ratio > 0:
+            # Apply forgetful causal mask
+            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
+            fcm_ratio = jax.random.uniform(
+                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
+                minval=self.config.fcm_min_ratio,
+                maxval=self.config.fcm_max_ratio
+            )
+            fcm_mask = jax.random.uniform(
+                self.make_rng('fcm'),
+                shape=(batch_size, 1, seq_length, seq_length)
+            ) > fcm_ratio
+            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
+            fcm_mask = fcm_mask.astype('bool')
+        else:
+            fcm_mask = None
+
         for block in self.blocks:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -712,6 +736,7 @@ class FlaxGPTJBlockCollection(nn.Module):
                 deterministic,
                 init_cache,
                 output_attentions,
+                fcm_mask,
             )
             hidden_states = layer_outputs[0]
 
