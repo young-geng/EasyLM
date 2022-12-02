@@ -15,7 +15,8 @@ EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
 training on Google Cloud TPU Pods.
 
 Currently, the following models are supported and with more models are coming soon:
-* [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B)
+* [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B), with support for
+[Forgetful Causal Masking (FCM)](https://arxiv.org/abs/2210.13432)
 
 
 ## Installation
