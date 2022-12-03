@@ -284,7 +284,7 @@ def match_partition_rules(rules, params):
         Flax TrainState and Optax optimizer state.
     """
     def get_partition_spec(name, leaf):
-        if len(leaf.shape) == 0:
+        if len(leaf.shape) == 0 or np.prod(leaf.shape) == 1:
             """ Don't partition scalar values. """
             return PS()
         for rule, ps in rules:

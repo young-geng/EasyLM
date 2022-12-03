@@ -37,6 +37,7 @@ FLAGS_DEF = define_flags_with_default(
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
     total_steps=10000,
+    optimizer='adamw',
     lr=0.01,
     lr_warmup_steps=10000,
     opt_b1=0.9,
@@ -93,16 +94,33 @@ def main(argv):
         lr_multiplier = FLAGS.lr / 0.01
         return lr_multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
 
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(FLAGS.clip_gradient),
-        optax.adamw(
-            learning_rate=learning_rate,
-            b1=FLAGS.opt_b1,
-            b2=FLAGS.opt_b2,
-            weight_decay=FLAGS.weight_decay,
-            mask=weight_decay_mask
+    if FLAGS.optimizer == 'palm':
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(FLAGS.clip_gradient),
+            optax.adafactor(
+                learning_rate=learning_rate,
+                multiply_by_parameter_scale=True,
+                momentum=FLAGS.opt_b1,
+                decay_rate=FLAGS.opt_b2,
+                factored=False,
+                clipping_threshold=None,
+                weight_decay_rate=FLAGS.weight_decay,
+                weight_decay_mask=weight_decay_mask,
+            )
         )
-    )
+    elif FLAGS.optimizer == 'adamw':
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(FLAGS.clip_gradient),
+            optax.adamw(
+                learning_rate=learning_rate,
+                b1=FLAGS.opt_b1,
+                b2=FLAGS.opt_b2,
+                weight_decay=FLAGS.weight_decay,
+                mask=weight_decay_mask
+            )
+        )
+    else:
+        raise ValueError(f'Unsupported optimizer type: {FLAGS.optimizer}!')
 
     device_count = jax.device_count()
     assert device_count % FLAGS.mp_mesh_dim == 0
