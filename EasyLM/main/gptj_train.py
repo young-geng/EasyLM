@@ -94,7 +94,7 @@ def main(argv):
         lr_multiplier = FLAGS.lr / 0.01
         return lr_multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
 
-    if FLAGS.optimizer == 'palm':
+    if FLAGS.optimizer == 'adafactor':
         optimizer = optax.chain(
             optax.clip_by_global_norm(FLAGS.clip_gradient),
             optax.adafactor(
