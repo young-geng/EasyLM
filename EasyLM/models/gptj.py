@@ -289,7 +289,7 @@ class GPTJConfig(PretrainedConfig):
 
     @staticmethod
     def get_weight_decay_exclusions():
-        return ('transformer/wte/embedding', 'bias')
+        return ()
 
     @staticmethod
     def rng_keys():
@@ -315,7 +315,10 @@ class FlaxGPTJAttention(nn.Module):
             self.embed_dim,
             use_bias=False,
             dtype=self.dtype,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.variance_scaling(
+                scale=1.0, mode='fan_in',
+                distribution='normal',
+            )
         )
 
         self.q_proj, self.k_proj, self.v_proj = dense(), dense(), dense()
@@ -470,7 +473,10 @@ class FlaxGPTJMLP(nn.Module):
 
     def setup(self):
         embed_dim = self.config.hidden_size
-        kernel_init = jax.nn.initializers.normal(self.config.initializer_range)
+        kernel_init=jax.nn.initializers.variance_scaling(
+            scale=1.0, mode='fan_in',
+            distribution='normal',
+        )
 
         self.fc_in = nn.Dense(self.intermediate_size, dtype=self.dtype, kernel_init=kernel_init)
         self.fc_out = nn.Dense(embed_dim, dtype=self.dtype, kernel_init=kernel_init)
@@ -836,7 +842,10 @@ class FlaxGPTJForCausalLMModule(nn.Module):
         self.lm_head = nn.Dense(
             self.config.vocab_size,
             dtype=self.dtype,
-            kernel_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
+            kernel_init=jax.nn.initializers.variance_scaling(
+                scale=1.0, mode='fan_in',
+                distribution='normal',
+            )
         )
 
     def __call__(

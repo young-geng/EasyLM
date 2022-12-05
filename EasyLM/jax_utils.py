@@ -219,6 +219,12 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
     return loss, accuracy
 
 
+def global_norm(tree):
+    squared = jax.tree_util.tree_map(lambda x: jnp.sum(jnp.square(x)), tree)
+    flattened, _ = jax.flatten_util.ravel_pytree(squared)
+    return jnp.sqrt(jnp.sum(flattened))
+
+
 def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be

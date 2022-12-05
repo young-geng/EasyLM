@@ -24,7 +24,7 @@ import optax
 from ..data import C4Dataset
 from ..jax_utils import (
     JaxRNG, ShardingHelper, MeshHelper, next_rng, match_partition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map
+    cross_entropy_loss_and_accuracy, named_tree_map, global_norm
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed
@@ -43,7 +43,7 @@ FLAGS_DEF = define_flags_with_default(
     opt_b1=0.9,
     opt_b2=0.99,
     clip_gradient=1.0,
-    weight_decay=0.01,
+    weight_decay=1e-4,
     load_checkpoint='',
     log_freq=50,
     save_model_freq=0,
@@ -73,8 +73,7 @@ def main(argv):
     dataset = C4Dataset(FLAGS.data)
     seq_length = dataset.config.seq_length
 
-    gptj_config = GPTJConfig.from_pretrained('EleutherAI/gpt-j-6B')
-    gptj_config.update(FLAGS.gptj)
+    gptj_config = GPTJConfig(**FLAGS.gptj)
     gptj_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
@@ -158,6 +157,8 @@ def main(argv):
             loss=loss,
             accuracy=accuracy,
             learning_rate=learning_rate(train_state.step),
+            gradient_norm=global_norm(grads),
+            param_norm=global_norm(train_state.params),
         )
         return train_state, rng_generator(), metrics
 
