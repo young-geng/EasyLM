@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Any, Mapping, Text, Tuple, Union
+from typing import Any, Mapping, Text, Tuple, Union, NamedTuple
 from functools import partial
 import re
 import dataclasses
@@ -17,6 +17,7 @@ from absl import logging
 from flax import jax_utils
 from flax.training.train_state import TrainState
 from flax.core import FrozenDict
+import optax
 
 
 class JaxRNG(object):
@@ -298,3 +299,63 @@ def match_partition_rules(rules, params):
                 return ps
         raise ValueError(f'Partition rule not found for param: {name}')
     return named_tree_map(get_partition_spec, params, sep='/')
+
+
+def optax_sum(*args):
+    """ Summing together a list of optax gradient transforms."""
+
+    init_fns, update_fns = zip(*args)
+
+    def init_fn(params):
+        return tuple(fn(params) for fn in init_fns)
+
+    def update_fn(updates, state, params=None):
+        if len(update_fns) != len(state):
+            raise ValueError(
+                "The number of updates and states has to be the same in "
+                "chain! Make sure you have called init first!"
+            )
+
+        new_state = []
+        new_updates = []
+        for s, fn in zip(state, update_fns):
+            new_u, new_s = fn(updates, s, params)
+            new_updates.append(new_u)
+            new_state.append(new_s)
+
+        def sum_fn(*args):
+            return sum(args)
+
+        summed_updates = jax.tree_util.tree_map(sum_fn, *new_updates)
+
+        return summed_updates, tuple(new_state)
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
+class OptaxScheduledWeightDecayState(NamedTuple):
+    count: jnp.DeviceArray
+
+
+def optax_add_scheduled_weight_decay(schedule_fn, mask=None):
+    """ Apply weight decay with schedule. """
+
+    def init_fn(params):
+        del params
+        return OptaxScheduledWeightDecayState(count=jnp.zeros([], jnp.int32))
+
+    def update_fn(updates, state, params):
+        if params is None:
+            raise ValueError(base.NO_PARAMS_MSG)
+
+        weight_decay = schedule_fn(state.count)
+        updates = jax.tree_util.tree_map(
+            lambda g, p: g + weight_decay * p, updates, params
+        )
+        return updates, OptaxScheduledWeightDecayState(
+            count=optax.safe_int32_increment(state.count)
+        )
+
+    if mask is not None:
+        return optax.masked(optax.GradientTransformation(init_fn, update_fn), mask)
+    return optax.GradientTransformation(init_fn, update_fn)

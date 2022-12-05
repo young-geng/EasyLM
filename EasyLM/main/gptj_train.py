@@ -24,7 +24,8 @@ import optax
 from ..data import C4Dataset
 from ..jax_utils import (
     JaxRNG, ShardingHelper, MeshHelper, next_rng, match_partition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map, global_norm
+    cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
+    optax_add_scheduled_weight_decay,
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed
@@ -89,33 +90,39 @@ def main(argv):
             return True
         return named_tree_map(decay, params, sep='/')
 
-    def learning_rate(step):
-        lr_multiplier = FLAGS.lr / 0.01
-        return lr_multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
+    def learning_rate_schedule(step):
+        multiplier = FLAGS.lr / 0.01
+        return multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
+
+    def weight_decay_schedule(step):
+        multiplier = FLAGS.weight_decay / 1e-4
+        return -multiplier * jnp.square(learning_rate_schedule(step))
 
     if FLAGS.optimizer == 'adafactor':
         optimizer = optax.chain(
             optax.clip_by_global_norm(FLAGS.clip_gradient),
             optax.adafactor(
-                learning_rate=learning_rate,
+                learning_rate=learning_rate_schedule,
                 multiply_by_parameter_scale=True,
                 momentum=FLAGS.opt_b1,
                 decay_rate=FLAGS.opt_b2,
                 factored=False,
                 clipping_threshold=None,
-                weight_decay_rate=FLAGS.weight_decay,
-                weight_decay_mask=weight_decay_mask,
+            ),
+            optax_add_scheduled_weight_decay(
+                weight_decay_schedule, weight_decay_mask
             )
         )
     elif FLAGS.optimizer == 'adamw':
         optimizer = optax.chain(
             optax.clip_by_global_norm(FLAGS.clip_gradient),
-            optax.adamw(
-                learning_rate=learning_rate,
+            optax.adam(
+                learning_rate=learning_rate_schedule,
                 b1=FLAGS.opt_b1,
                 b2=FLAGS.opt_b2,
-                weight_decay=FLAGS.weight_decay,
-                mask=weight_decay_mask
+            ),
+            optax_add_scheduled_weight_decay(
+                weight_decay_schedule, weight_decay_mask
             )
         )
     else:
@@ -156,7 +163,7 @@ def main(argv):
         metrics = dict(
             loss=loss,
             accuracy=accuracy,
-            learning_rate=learning_rate(train_state.step),
+            learning_rate=learning_rate_schedule(train_state.step),
             gradient_norm=global_norm(grads),
             param_norm=global_norm(train_state.params),
         )
