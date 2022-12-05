@@ -202,7 +202,7 @@ class GPTJConfig(PretrainedConfig):
         n_embd=4096,
         n_layer=28,
         n_head=16,
-        rotary_dim=64,
+        rotary_dim=None,
         n_inner=None,
         activation_function="gelu_new",
         resid_pdrop=0.0,
@@ -254,7 +254,8 @@ class GPTJConfig(PretrainedConfig):
     def get_default_config(cls, updates=None):
         none_arg_types = dict(
             n_inner=int,
-            n_real_tokens=int
+            n_real_tokens=int,
+            rotary_dim=int,
         )
         config = function_args_to_config(cls.__init__, none_arg_types=none_arg_types)
 
@@ -328,7 +329,7 @@ class FlaxGPTJAttention(nn.Module):
 
         self.causal_mask = make_causal_mask(jnp.ones((1, config.max_position_embeddings), dtype="bool"), dtype="bool")
 
-        pos_embd_dim = self.rotary_dim or self.embed_dim
+        pos_embd_dim = self.rotary_dim or self.embed_dim // self.num_heads
         self.embed_positions = create_sinusoidal_positions(config.max_position_embeddings, pos_embd_dim)
 
     def _split_heads(self, hidden_states):
