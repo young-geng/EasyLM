@@ -110,32 +110,6 @@ GPTJ_INPUTS_DOCSTRING = r"""
 """
 
 
-def create_sinusoidal_positions(num_pos, dim):
-    inv_freq = 1.0 / (10000 ** (np.arange(0, dim, 2) / dim))
-    sinusoid_inp = np.einsum("i , j -> i j", np.arange(num_pos), inv_freq).astype("float32")
-    sin, cos = np.sin(sinusoid_inp), np.cos(sinusoid_inp)
-
-    sentinel = dim // 2 + dim % 2
-    out = np.zeros((num_pos, dim))
-    out[:, 0:sentinel] = sin
-    out[:, sentinel:] = cos
-
-    return jnp.array(out)
-
-
-def rotate_every_two(tensor):
-    rotate_half_tensor = jnp.stack((-tensor[:, :, :, 1::2], tensor[:, :, :, ::2]), axis=-1)
-    rotate_half_tensor = rotate_half_tensor.reshape(rotate_half_tensor.shape[:-2] + (-1,))
-    return rotate_half_tensor
-
-
-def apply_rotary_pos_emb(tensor, sincos):
-    sin_pos, cos_pos = sincos
-    sin_pos = sin_pos[:, :, None, :].repeat(2, 3)
-    cos_pos = cos_pos[:, :, None, :].repeat(2, 3)
-    return (tensor * cos_pos) + (rotate_every_two(tensor) * sin_pos)
-
-
 class GPTJConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`GPTJModel`]. It is used to instantiate a GPT-J
@@ -295,6 +269,32 @@ class GPTJConfig(PretrainedConfig):
     @staticmethod
     def rng_keys():
         return ('params', 'dropout', 'fcm')
+
+
+def create_sinusoidal_positions(num_pos, dim):
+    inv_freq = 1.0 / (10000 ** (np.arange(0, dim, 2) / dim))
+    sinusoid_inp = np.einsum("i , j -> i j", np.arange(num_pos), inv_freq).astype("float32")
+    sin, cos = np.sin(sinusoid_inp), np.cos(sinusoid_inp)
+
+    sentinel = dim // 2 + dim % 2
+    out = np.zeros((num_pos, dim))
+    out[:, 0:sentinel] = sin
+    out[:, sentinel:] = cos
+
+    return jnp.array(out)
+
+
+def rotate_every_two(tensor):
+    rotate_half_tensor = jnp.stack((-tensor[:, :, :, 1::2], tensor[:, :, :, ::2]), axis=-1)
+    rotate_half_tensor = rotate_half_tensor.reshape(rotate_half_tensor.shape[:-2] + (-1,))
+    return rotate_half_tensor
+
+
+def apply_rotary_pos_emb(tensor, sincos):
+    sin_pos, cos_pos = sincos
+    sin_pos = sin_pos[:, :, None, :].repeat(2, 3)
+    cos_pos = cos_pos[:, :, None, :].repeat(2, 3)
+    return (tensor * cos_pos) + (rotate_every_two(tensor) * sin_pos)
 
 
 class FlaxGPTJAttention(nn.Module):
@@ -865,7 +865,7 @@ class FlaxGPTJForCausalLMModule(nn.Module):
             attention_mask = jnp.ones_like(input_ids)
         if position_ids is None:
             position_ids = jnp.broadcast_to(
-                jnp.expand_dims(jnp.arange(seq_length, dtype=jnp.int32), 0),
+                jnp.cumsum(attention_mask, axis=-1) - 1,
                 (batch_size, seq_length)
             )
 

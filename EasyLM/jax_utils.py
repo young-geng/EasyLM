@@ -161,6 +161,15 @@ class ShardingHelper(object):
         return jax.tree_util.tree_map(put_fn, self.shard_fns, tree)
 
 
+def get_jax_mp_mesh(mp_axis_dim, mp_axis_name='mp', dp_axis_name='dp'):
+    """ Return a 2D mesh for (MP, DP) partitioning. """
+    assert jax.device_count() % mp_axis_dim == 0
+    return Mesh(
+        np.array(jax.devices()).reshape(-1, mp_axis_dim),
+        (dp_axis_name, mp_axis_name)
+    )
+
+
 def wrap_function_with_rng(rng):
     """ To be used as decorator, automatically bookkeep a RNG for the wrapped function. """
     def wrap_function(function):
@@ -199,6 +208,7 @@ def cross_entropy_loss(logits, labels, smoothing_factor=0.):
 def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
     if valid is None:
         valid = jnp.ones(tokens.shape[:2])
+    valid = valid.astype(jnp.float32)
     valid_text_length = jnp.maximum(jnp.sum(valid, axis=-1), 1e-10)
 
     token_log_prob = jnp.squeeze(
@@ -221,6 +231,7 @@ def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
 
 
 def global_norm(tree):
+    """ Return the global L2 norm of a pytree. """
     squared = jax.tree_util.tree_map(lambda x: jnp.sum(jnp.square(x)), tree)
     flattened, _ = jax.flatten_util.ravel_pytree(squared)
     return jnp.sqrt(jnp.sum(flattened))
@@ -303,7 +314,6 @@ def match_partition_rules(rules, params):
 
 def optax_sum(*args):
     """ Summing together a list of optax gradient transforms."""
-
     init_fns, update_fns = zip(*args)
 
     def init_fn(params):

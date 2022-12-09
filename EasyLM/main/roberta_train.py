@@ -25,18 +25,19 @@ from ..data import C4Dataset
 from ..jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay,
+    optax_add_scheduled_weight_decay, flatten_tree
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed
 )
-from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
+from ..models.roberta import RobertaConfig, FlaxRobertaForMaskedLMModule
 
 
 FLAGS_DEF = define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
+    mask_token_probability=0.15,
     total_steps=10000,
     lr=0.01,
     lr_warmup_steps=10000,
@@ -49,13 +50,11 @@ FLAGS_DEF = define_flags_with_default(
     save_model_freq=0,
     save_model_keep=1,
     data=C4Dataset.get_default_config(),
-    gptj=GPTJConfig.get_default_config(),
+    roberta=RobertaConfig.get_default_config(),
     logger=WandBLogger.get_default_config(),
     log_all_worker=False,
 )
 FLAGS = absl.flags.FLAGS
-
-
 
 def main(argv):
     FLAGS = absl.flags.FLAGS
@@ -73,17 +72,18 @@ def main(argv):
     dataset = C4Dataset(FLAGS.data)
     seq_length = dataset.config.seq_length
 
-    gptj_config = GPTJConfig(**FLAGS.gptj)
-    gptj_config.update(dict(
+    roberta_config = RobertaConfig(**FLAGS.roberta)
+    roberta_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
+        pad_token_id=dataset.tokenizer.pad_token_id,
+        vocab_size=dataset.vocab_size,
     ))
-    gptj_config.vocab_size = dataset.vocab_size
-    model = FlaxGPTJForCausalLMModule(gptj_config)
+    model = FlaxRobertaForMaskedLMModule(roberta_config)
 
     def weight_decay_mask(params):
         def decay(name, _):
-            for rule in GPTJConfig.get_weight_decay_exclusions():
+            for rule in roberta_config.get_weight_decay_exclusions():
                 if re.search(rule, name) is not None:
                     return False
             return True
@@ -118,7 +118,9 @@ def main(argv):
             input_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             position_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             attention_mask=jnp.ones((4, seq_length), dtype=jnp.int32),
-            rngs=rng_generator(gptj_config.rng_keys()),
+            token_type_ids=None,
+            head_mask=None,
+            rngs=rng_generator(roberta_config.rng_keys()),
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
@@ -126,15 +128,27 @@ def main(argv):
         rng_generator = JaxRNG(rng)
         tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
         def loss_and_accuracy(params):
-            bos_tokens = jnp.full(
-                (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
+            altered_tokens = jax.random.uniform(
+                rng_generator(), shape=tokens.shape
+            ) < FLAGS.mask_token_probability
+            random_uniform = jax.random.uniform(rng_generator(), shape=tokens.shape)
+            altered_by_mask = altered_tokens & (random_uniform < 0.8)
+            altered_by_random = altered_tokens & (random_uniform >= 0.8) & (random_uniform < 0.9)
+            inputs = jnp.where(altered_by_mask, dataset.tokenizer.mask_token_id, tokens)
+            random_tokens = jax.random.randint(
+                rng_generator(), shape=tokens.shape, minval=0, maxval=dataset.vocab_size
             )
-            inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
+            inputs = jnp.where(altered_by_random, random_tokens, inputs)
             logits = model.apply(
-                params, inputs, deterministic=False,
-                rngs=rng_generator(gptj_config.rng_keys()),
+                params, inputs,
+                attention_mask=jnp.ones_like(inputs),
+                token_type_ids=None,
+                position_ids=None,
+                head_mask=None,
+                deterministic=False,
+                rngs=rng_generator(roberta_config.rng_keys()),
             ).logits
-            return cross_entropy_loss_and_accuracy(logits, tokens)
+            return cross_entropy_loss_and_accuracy(logits, tokens, valid=altered_tokens)
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
         (loss, accuracy), grads = grad_fn(train_state.params)
         train_state = train_state.apply_gradients(grads=grads)
@@ -149,7 +163,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        GPTJConfig.get_partition_rules(), train_state_shapes
+        roberta_config.get_partition_rules(), train_state_shapes
     )
 
     sharding_helper = ShardingHelper(train_state_partition)
