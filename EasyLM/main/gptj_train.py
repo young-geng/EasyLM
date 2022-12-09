@@ -25,7 +25,7 @@ from ..data import C4Dataset
 from ..jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay,
+    optax_add_scheduled_weight_decay
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed

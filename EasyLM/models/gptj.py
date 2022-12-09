@@ -264,7 +264,10 @@ class GPTJConfig(PretrainedConfig):
 
     @staticmethod
     def get_weight_decay_exclusions():
-        return ()
+        return (
+            'ln_[0-9]+/bias', 'ln_[0-9]+/scale', 'ln_f/bias', 'ln_f/scale',
+            'bias'
+        )
 
     @staticmethod
     def rng_keys():
