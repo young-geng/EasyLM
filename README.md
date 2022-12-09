@@ -14,9 +14,10 @@ the model weights and training data across multiple accelerators. Currently,
 EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
 training on Google Cloud TPU Pods.
 
-Currently, the following models are supported and with more models are coming soon:
+Currently, the following models are supported and more models are coming soon:
 * [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B), with support for
 [Forgetful Causal Masking (FCM)](https://arxiv.org/abs/2210.13432)
+* [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
 
 ## Installation
@@ -59,6 +60,6 @@ in the pod.
 
 
 ## Credits
-* The JAX/Flax GPT-J implementation is from [transformers](https://huggingface.co/docs/transformers/main/en/index)
+* The JAX/Flax GPT-J and RoBERTa implementation are from [transformers](https://huggingface.co/docs/transformers/main/en/index)
 * Most of the utilities are from [m3ae_public](https://github.com/young-geng/m3ae_public)
 * The codebase is heavily inspired by [JAXSeq](https://github.com/Sea-Snell/JAXSeq)
