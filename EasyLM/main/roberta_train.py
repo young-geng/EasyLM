@@ -21,7 +21,7 @@ from flax.training.checkpoints import restore_checkpoint
 import optax
 
 
-from ..data import C4Dataset
+from ..data import PretrainDataset
 from ..jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
@@ -49,7 +49,7 @@ FLAGS_DEF = define_flags_with_default(
     log_freq=50,
     save_model_freq=0,
     save_model_keep=1,
-    data=C4Dataset.get_default_config(),
+    dataset=PretrainDataset.get_default_config(),
     roberta=RobertaConfig.get_default_config(),
     logger=WandBLogger.get_default_config(),
     log_all_worker=False,
@@ -69,8 +69,8 @@ def main(argv):
     )
     set_random_seed(FLAGS.seed)
 
-    dataset = C4Dataset(FLAGS.data)
-    seq_length = dataset.config.seq_length
+    dataset = PretrainDataset.load_dataset(FLAGS.dataset)
+    seq_length = dataset.seq_length
 
     roberta_config = RobertaConfig(**FLAGS.roberta)
     roberta_config.update(dict(
