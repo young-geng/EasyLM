@@ -28,7 +28,8 @@ from ..jax_utils import (
     optax_add_scheduled_weight_decay
 )
 from ..utils import (
-    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed
+    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
+    load_pickle
 )
 from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
 
@@ -45,6 +46,7 @@ FLAGS_DEF = define_flags_with_default(
     clip_gradient=1.0,
     weight_decay=1e-4,
     load_checkpoint='',
+    load_dataset_state='',
     log_freq=50,
     save_model_freq=0,
     save_model_keep=1,
@@ -70,7 +72,10 @@ def main(argv):
     )
     set_random_seed(FLAGS.seed)
 
-    dataset = PretrainDataset.load_dataset(FLAGS.dataset)
+    if FLAGS.load_dataset_state != '':
+        dataset = load_pickle(FLAGS.load_dataset_state)['dataset']
+    else:
+        dataset = PretrainDataset.load_dataset(FLAGS.dataset)
     seq_length = dataset.seq_length
 
     gptj_config = GPTJConfig(**FLAGS.gptj)
@@ -167,6 +172,16 @@ def main(argv):
         donate_argnums=(0, 1),
     )
 
+    def save_checkpoint(train_state):
+        logger.save_checkpoint(
+            sharding_helper.get(train_state), step=train_state.step,
+            overwrite=True, keep=FLAGS.save_model_keep,
+        )
+        logger.save_pickle(
+            {'step': train_state.step, 'variant': variant, 'dataset': dataset},
+            'dataset_state.pkl',
+        )
+
     if FLAGS.load_checkpoint != '':
         with jax.default_device(jax.devices("cpu")[0]):
             restored_checkpoint_state = restore_checkpoint(
@@ -185,10 +200,7 @@ def main(argv):
             train_state = sharded_init_fn(next_rng())
 
         if FLAGS.save_model_freq > 0:
-            logger.save_checkpoint(
-                sharding_helper.get(train_state), step=train_state.step,
-                overwrite=True, keep=FLAGS.save_model_keep,
-            )
+            save_checkpoint(train_state)
 
         sharded_rng = next_rng()
 
@@ -206,16 +218,10 @@ def main(argv):
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 
             if FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
-                logger.save_checkpoint(
-                    sharding_helper.get(train_state), step=train_state.step,
-                    overwrite=True, keep=FLAGS.save_model_keep,
-                )
+                save_checkpoint(train_state)
 
         if FLAGS.save_model_freq > 0:
-            logger.save_checkpoint(
-                sharding_helper.get(train_state),
-                step=train_state.step, overwrite=True
-            )
+            save_checkpoint(train_state)
 
 
 if __name__ == "__main__":

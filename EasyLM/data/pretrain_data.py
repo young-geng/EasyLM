@@ -105,6 +105,12 @@ class HuggingfaceDataset(object):
                     }
                     tokens = tokens[chunk_size:]
 
+    def __getstate__(self):
+        return self.config
+
+    def __setstate__(self, state):
+        self.__init__(state)
+
     @property
     def seq_length(self):
         return self.config.seq_length
@@ -151,7 +157,7 @@ class H5Dataset(object):
             self.h5_file = h5py.File(self.config.path, 'r')
 
         self._hf_tokenizer = HuggingFacePretrainedTokenizer(self.config.tokenizer)
-        self.index = 0
+        self.index = start_index
 
     def __getstate__(self):
         return self.config, self.index
@@ -177,6 +183,13 @@ class H5Dataset(object):
                     )
                 }
                 tokens = tokens[chunk_size:]
+
+    def __getstate__(self):
+        return self.config, self.index
+
+    def __setstate__(self, state):
+        config, start_index = state
+        self.__init__(config, start_index)
 
     @property
     def seq_length(self):
