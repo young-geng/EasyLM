@@ -31,7 +31,9 @@ from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
     load_pickle
 )
-from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
+from ..models.gptj import (
+    GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
+)
 
 
 FLAGS_DEF = define_flags_with_default(
@@ -45,18 +47,19 @@ FLAGS_DEF = define_flags_with_default(
     opt_b2=0.99,
     clip_gradient=1.0,
     weight_decay=1e-4,
+    load_hf_pretrained='',
     load_checkpoint='',
     load_dataset_state='',
     log_freq=50,
     save_model_freq=0,
     save_model_keep=1,
+    tokenizer=GPTJConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
     gptj=GPTJConfig.get_default_config(),
     logger=WandBLogger.get_default_config(),
     log_all_worker=False,
 )
 FLAGS = absl.flags.FLAGS
-
 
 
 def main(argv):
@@ -75,15 +78,16 @@ def main(argv):
     if FLAGS.load_dataset_state != '':
         dataset = load_pickle(FLAGS.load_dataset_state)['dataset']
     else:
-        dataset = PretrainDataset.load_dataset(FLAGS.dataset)
-    seq_length = dataset.seq_length
+        tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
+        dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
 
+    seq_length = dataset.seq_length
     gptj_config = GPTJConfig(**FLAGS.gptj)
     gptj_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
+        vocab_size=dataset.vocab_size,
     ))
-    gptj_config.vocab_size = dataset.vocab_size
     model = FlaxGPTJForCausalLMModule(gptj_config)
 
     def weight_decay_mask(params):
@@ -190,6 +194,15 @@ def main(argv):
             start_step = restored_checkpoint_state.step
     else:
         start_step = 0
+        if FLAGS.load_hf_pretrained != '':
+            with jax.default_device(jax.devices("cpu")[0]):
+                hf_pretrained_params = FlaxGPTJForCausalLM.from_pretrained(
+                    FLAGS.load_hf_pretrained, _do_init=False
+                )[1]
+                import pdb; pdb.set_trace()
+                hf_pretrained_params = flax.core.frozen_dict.freeze(
+                    {'params': hf_pretrained_params}
+                )
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
@@ -198,6 +211,11 @@ def main(argv):
             del restored_checkpoint_state
         else:
             train_state = sharded_init_fn(next_rng())
+            if FLAGS.load_hf_pretrained != '':
+                train_state = sharding_helper.get(train_state)
+                train_state = train_state.replace(params=hf_pretrained_params)
+                del hf_pretrained_params
+                train_state = sharding_helper.put(train_state)
 
         if FLAGS.save_model_freq > 0:
             save_checkpoint(train_state)

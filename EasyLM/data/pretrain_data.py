@@ -10,56 +10,7 @@ from ml_collections import ConfigDict
 from tqdm import tqdm, trange
 import numpy as np
 
-from transformers import AutoTokenizer
 from datasets import load_dataset
-
-
-class HuggingFacePretrainedTokenizer(object):
-    """ Wrapper around HuggingFace's pretrained tokenizer. """
-
-    @staticmethod
-    def get_default_config(updates=None):
-        config = ConfigDict()
-        config.name = 'EleutherAI/gpt-j-6B'
-        config.bos_token = '<|endoftext|>'
-        config.eos_token = '<|endoftext|>'
-        config.unk_token = '<|unknown|>'
-        config.sep_token = '<|sep|>'
-        config.pad_token = '<|pad|>'
-        config.cls_token = '<|cls|>'
-        config.mask_token = '<|mask|>'
-
-        config.vocab_pad_size = 256
-
-        if updates is not None:
-            config.update(ConfigDict(updates).copy_and_resolve_references())
-
-        return config
-
-    def __init__(self, config):
-        self.config = self.get_default_config(config)
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.config.name,
-            bos_token=self.config.bos_token,
-            eos_token=self.config.eos_token,
-            sep_token=self.config.sep_token,
-            unk_token=self.config.unk_token,
-            pad_token=self.config.pad_token,
-            cls_token=self.config.cls_token,
-            mask_token=self.config.mask_token,
-        )
-
-    @property
-    def tokenizer(self):
-        return self._tokenizer
-
-    @property
-    def vocab_size(self):
-        """ Pad the vocab size so it can be evenly partitioned. """
-        return (
-            int(np.ceil(len(self.tokenizer) / self.config.vocab_pad_size))
-            * self.config.vocab_pad_size
-        )
 
 
 class HuggingfaceDataset(object):
@@ -67,25 +18,24 @@ class HuggingfaceDataset(object):
     @staticmethod
     def get_default_config(updates=None):
         config = ConfigDict()
-        config.tokenizer = HuggingFacePretrainedTokenizer.get_default_config()
         config.seq_length = 1024
         config.path = 'c4'
         config.name = 'en'
         config.split = 'train'
         config.field = 'text'
-        config.streaming=True
+        config.streaming = True
         config.batch_size = 8
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
         return config
 
-    def __init__(self, config):
+    def __init__(self, config, tokenizer):
         self.config = self.get_default_config(config)
         name = self.config.name if self.config.name != '' else None
         split = self.config.split if self.config.split != '' else None
 
-        self._hf_tokenizer = HuggingFacePretrainedTokenizer(self.config.tokenizer)
+        self._tokenizer = tokenizer
         self._dataset = load_dataset(
             self.config.path, name, split=split, streaming=self.config.streaming
         )
@@ -106,10 +56,11 @@ class HuggingfaceDataset(object):
                     tokens = tokens[chunk_size:]
 
     def __getstate__(self):
-        return self.config
+        return self.config, self.tokenizer
 
     def __setstate__(self, state):
-        self.__init__(state)
+        config, tokenizer = state
+        self.__init__(config, tokenizer)
 
     @property
     def seq_length(self):
@@ -117,7 +68,7 @@ class HuggingfaceDataset(object):
 
     @property
     def tokenizer(self):
-        return self._hf_tokenizer.tokenizer
+        return self._tokenizer
 
     @property
     def dataset(self):
@@ -125,7 +76,7 @@ class HuggingfaceDataset(object):
 
     @property
     def vocab_size(self):
-        return self._hf_tokenizer.vocab_size
+        return len(self._tokenizer)
 
 
 class H5Dataset(object):
@@ -135,7 +86,6 @@ class H5Dataset(object):
         config = ConfigDict()
         config.path = ''
         config.field = 'text'
-        config.tokenizer = HuggingFacePretrainedTokenizer.get_default_config()
         config.seq_length = 1024
         config.batch_size = 8
 
@@ -143,7 +93,7 @@ class H5Dataset(object):
             config.update(ConfigDict(updates).copy_and_resolve_references())
         return config
 
-    def __init__(self, config, start_index=0):
+    def __init__(self, config, tokenizer, start_index=0):
         self.config = self.get_default_config(config)
         assert self.config.path != ''
 
@@ -156,15 +106,8 @@ class H5Dataset(object):
         else:
             self.h5_file = h5py.File(self.config.path, 'r')
 
-        self._hf_tokenizer = HuggingFacePretrainedTokenizer(self.config.tokenizer)
+        self._tokenizer = tokenizer
         self.index = start_index
-
-    def __getstate__(self):
-        return self.config, self.index
-
-    def __setstate__(self, state):
-        config, start_index = state
-        self.__init__(config, start_index)
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
@@ -185,11 +128,12 @@ class H5Dataset(object):
                 tokens = tokens[chunk_size:]
 
     def __getstate__(self):
-        return self.config, self.index
+        return self.config, self.tokenizer, self.index
 
     def __setstate__(self, state):
-        config, start_index = state
-        self.__init__(config, start_index)
+        config, tokenizer, start_index = state
+        self.__init__(config, tokenizer, start_index)
+
 
     @property
     def seq_length(self):
@@ -197,7 +141,7 @@ class H5Dataset(object):
 
     @property
     def tokenizer(self):
-        return self._hf_tokenizer.tokenizer
+        return self._tokenizer
 
     @property
     def dataset(self):
@@ -205,7 +149,7 @@ class H5Dataset(object):
 
     @property
     def vocab_size(self):
-        return self._hf_tokenizer.vocab_size
+        return len(self.tokenizer)
 
 
 class PretrainDataset(object):
@@ -223,12 +167,12 @@ class PretrainDataset(object):
         return config
 
     @classmethod
-    def load_dataset(cls, config):
+    def load_dataset(cls, config, tokenizer, **kwargs):
         config = cls.get_default_config(config)
         if config.dataset_type == 'huggingface':
-            return HuggingfaceDataset(config.huggingface_dataset)
+            return HuggingfaceDataset(config.huggingface_dataset, tokenizer, **kwargs)
         elif config.dataset_type == 'h5':
-            return H5Dataset(config.h5_dataset)
+            return H5Dataset(config.h5_dataset, tokenizer, **kwargs)
         else:
             raise ValueError(f'Unknown dataset type: {config.dataset_type}')
 

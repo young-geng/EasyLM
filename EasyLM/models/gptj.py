@@ -36,6 +36,7 @@ from transformers.modeling_flax_outputs import FlaxBaseModelOutput, FlaxCausalLM
 from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append_call_sample_docstring
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from transformers.generation_flax_logits_process import FlaxLogitsProcessorList
+from transformers import AutoTokenizer
 from jax.experimental.pjit import with_sharding_constraint
 from jax.experimental import PartitionSpec
 from jax.interpreters import pxla
@@ -272,6 +273,37 @@ class GPTJConfig(PretrainedConfig):
     @staticmethod
     def rng_keys():
         return ('params', 'dropout', 'fcm')
+
+    @staticmethod
+    def get_tokenizer_config(updates=None):
+        config = ConfigDict()
+        config.name = 'EleutherAI/gpt-j-6B'
+        config.bos_token = '<|endoftext|>'
+        config.eos_token = '<|endoftext|>'
+        config.unk_token = config_dict.placeholder(str)
+        config.sep_token = config_dict.placeholder(str)
+        config.pad_token = config_dict.placeholder(str)
+        config.cls_token = config_dict.placeholder(str)
+        config.mask_token = config_dict.placeholder(str)
+
+        if updates is not None:
+            config.update(ConfigDict(updates).copy_and_resolve_references())
+
+        return config
+
+    @classmethod
+    def get_tokenizer(cls, config):
+        config = cls.get_tokenizer_config(config)
+        return AutoTokenizer.from_pretrained(
+            config.name,
+            bos_token=config.bos_token,
+            eos_token=config.eos_token,
+            sep_token=config.sep_token,
+            unk_token=config.unk_token,
+            pad_token=config.pad_token,
+            cls_token=config.cls_token,
+            mask_token=config.mask_token,
+        )
 
 
 def create_sinusoidal_positions(num_pos, dim):

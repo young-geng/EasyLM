@@ -49,6 +49,7 @@ from transformers.modeling_flax_utils import (
 from transformers.utils import (
     add_start_docstrings, add_start_docstrings_to_model_forward, logging
 )
+from transformers import AutoTokenizer
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
@@ -195,7 +196,7 @@ class RobertaConfig(PretrainedConfig):
 
     def __init__(
         self,
-        vocab_size=30522,
+        vocab_size=50265,
         hidden_size=768,
         num_hidden_layers=12,
         num_attention_heads=12,
@@ -203,8 +204,8 @@ class RobertaConfig(PretrainedConfig):
         hidden_act="gelu",
         hidden_dropout_prob=0.1,
         attention_probs_dropout_prob=0.1,
-        max_position_embeddings=2048,
-        type_vocab_size=2,
+        max_position_embeddings=514,
+        type_vocab_size=1,
         initializer_range=0.02,
         layer_norm_eps=1e-12,
         pad_token_id=1,
@@ -239,7 +240,7 @@ class RobertaConfig(PretrainedConfig):
             classifier_dropout=float,
         )
         config = function_args_to_config(cls.__init__, none_arg_types=none_arg_types)
-        config.tie_word_embeddings = False
+        config.tie_word_embeddings = True
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -251,7 +252,7 @@ class RobertaConfig(PretrainedConfig):
         """ Parition rules for Roberta model. """
         return (
             ('embeddings/(position_embeddings|token_type_embeddings)/embedding', PartitionSpec()),
-            ('embeddings/word_embeddings/embedding', PartitionSpec('mp', None)),
+            ('embeddings/word_embeddings/embedding', PartitionSpec()),
             ('attention/self/(key|query|value)/kernel', PartitionSpec(None, 'mp')),
             ('attention/self/(key|query|value)/bias', PartitionSpec()),
             ('attention/output/dense/kernel', PartitionSpec('mp', None)),
@@ -275,6 +276,23 @@ class RobertaConfig(PretrainedConfig):
     @staticmethod
     def rng_keys():
         return ('params', 'dropout')
+
+    @staticmethod
+    def get_tokenizer_config(updates=None):
+        config = ConfigDict()
+        config.name = 'roberta-base'
+
+        if updates is not None:
+            config.update(ConfigDict(updates).copy_and_resolve_references())
+
+        return config
+
+    @classmethod
+    def get_tokenizer(cls, config):
+        config = cls.get_tokenizer_config(config)
+        return AutoTokenizer.from_pretrained(
+            config.name,
+        )
 
 
 def create_position_ids_from_input_ids(input_ids, padding_idx):
