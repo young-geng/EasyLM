@@ -32,7 +32,7 @@ requests
 typing-extensions
 EndOfFile
 
-pip install -r $HOME/tpu_requirements.txt
+pip install --upgrade -r $HOME/tpu_requirements.txt
 
 
 # vim configurations
