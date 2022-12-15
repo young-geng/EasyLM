@@ -199,7 +199,6 @@ def main(argv):
                 hf_pretrained_params = FlaxGPTJForCausalLM.from_pretrained(
                     FLAGS.load_hf_pretrained, _do_init=False
                 )[1]
-                import pdb; pdb.set_trace()
                 hf_pretrained_params = flax.core.frozen_dict.freeze(
                     {'params': hf_pretrained_params}
                 )
