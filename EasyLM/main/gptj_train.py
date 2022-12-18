@@ -29,11 +29,9 @@ from ..jax_utils import (
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle
+    load_pickle, user_flags_to_config_dict
 )
-from ..models.gptj import (
-    GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
-)
+from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
 
 
 FLAGS_DEF = define_flags_with_default(
@@ -68,6 +66,7 @@ def main(argv):
         jax.distributed.initialize()
 
     variant = get_user_flags(FLAGS, FLAGS_DEF)
+    flags_config_dict = user_flags_to_config_dict(FLAGS, FLAGS_DEF)
     logger = WandBLogger(
         config=FLAGS.logger,
         variant=variant,
@@ -181,10 +180,14 @@ def main(argv):
             sharding_helper.get(train_state), step=train_state.step,
             overwrite=True, keep=FLAGS.save_model_keep,
         )
-        logger.save_pickle(
-            {'step': train_state.step, 'variant': variant, 'dataset': dataset},
-            'dataset_state.pkl',
+        save_data = dict(
+            step=train_state.step,
+            variant=variant,
+            flags=flags_config_dict,
+            dataset=dataset,
+            gptj_config=gptj_config,
         )
+        logger.save_pickle(save_data, 'metadata.pkl')
 
     if FLAGS.load_checkpoint != '':
         with jax.default_device(jax.devices("cpu")[0]):
@@ -195,13 +198,9 @@ def main(argv):
     else:
         start_step = 0
         if FLAGS.load_hf_pretrained != '':
-            with jax.default_device(jax.devices("cpu")[0]):
-                hf_pretrained_params = FlaxGPTJForCausalLM.from_pretrained(
-                    FLAGS.load_hf_pretrained, _do_init=False
-                )[1]
-                hf_pretrained_params = flax.core.frozen_dict.freeze(
-                    {'params': hf_pretrained_params}
-                )
+            hf_pretrained_params = gptj_config.load_pretrained(
+                FLAGS.load_hf_pretrained
+            )
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:

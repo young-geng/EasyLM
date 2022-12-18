@@ -280,11 +280,9 @@ class GPTJConfig(PretrainedConfig):
         config.name = 'EleutherAI/gpt-j-6B'
         config.bos_token = '<|endoftext|>'
         config.eos_token = '<|endoftext|>'
-        config.unk_token = config_dict.placeholder(str)
-        config.sep_token = config_dict.placeholder(str)
-        config.pad_token = config_dict.placeholder(str)
-        config.cls_token = config_dict.placeholder(str)
-        config.mask_token = config_dict.placeholder(str)
+        config.pad_token = '<|extratoken_40|>'
+        config.cls_token = '<|extratoken_41|>'
+        config.mask_token = '<|extratoken_42|>'
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -298,12 +296,18 @@ class GPTJConfig(PretrainedConfig):
             config.name,
             bos_token=config.bos_token,
             eos_token=config.eos_token,
-            sep_token=config.sep_token,
-            unk_token=config.unk_token,
             pad_token=config.pad_token,
             cls_token=config.cls_token,
             mask_token=config.mask_token,
+            padding_side='left',
         )
+
+    @staticmethod
+    def load_pretrained(name):
+        with jax.default_device(jax.devices("cpu")[0]):
+            params = FlaxGPTJForCausalLM.from_pretrained(name, _do_init=False)[1]
+            params = freeze({'params': params})
+        return params
 
 
 def create_sinusoidal_positions(num_pos, dim):
@@ -649,7 +653,10 @@ class FlaxGPTJPreTrainedModel(FlaxPreTrainedModel):
 
     def _get_logits_processor(self,*args, **kwargs) -> FlaxLogitsProcessorList:
         processors = super()._get_logits_processor(*args, **kwargs)
-        processors.append(FlaxTokenPaddingLogitProcessor(self.config.n_real_tokens))
+        def squash_extra_tokens(input_ids, scores, cur_len):
+            return scores.at[:, self.config.n_real_tokens:].set(-float('inf'))
+
+        processors.append(squash_extra_tokens)
         return processors
 
     @add_start_docstrings_to_model_forward(GPTJ_INPUTS_DOCSTRING)

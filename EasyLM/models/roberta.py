@@ -294,6 +294,13 @@ class RobertaConfig(PretrainedConfig):
             config.name,
         )
 
+    @staticmethod
+    def load_pretrained(name):
+        with jax.default_device(jax.devices("cpu")[0]):
+            params = FlaxRobertaForMaskedLM.from_pretrained(name, _do_init=False)[1]
+            params = freeze({'params': params})
+        return params
+
 
 def create_position_ids_from_input_ids(input_ids, padding_idx):
     """

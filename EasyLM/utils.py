@@ -197,6 +197,14 @@ def get_user_flags(flags, flags_def):
     return output
 
 
+def user_flags_to_config_dict(flags, flags_def):
+    output = ConfigDict()
+    for key in flags_def:
+        output[key] = getattr(flags, key)
+
+    return output
+
+
 def flatten_config_dict(config, prefix=None):
     output = {}
     for key, val in config.items():
