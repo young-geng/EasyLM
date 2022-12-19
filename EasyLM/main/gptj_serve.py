@@ -51,6 +51,7 @@ FLAGS_DEF = define_flags_with_default(
     seq_length=512,
     top_k=50,
     top_p=1.0,
+    do_sample=True,
     num_beams=10,
     load_hf_pretrained='',
     load_checkpoint='',
@@ -120,6 +121,7 @@ def main(argv):
             top_k=FLAGS.top_k,
             top_p=FLAGS.top_p,
             num_beams=FLAGS.num_beams,
+            do_sample=FLAGS.do_sample,
         ).sequences[:, input_tokens.shape[1]:]
         return output, rng_generator()
 
@@ -182,7 +184,12 @@ def main(argv):
                 )
                 output = jax.device_get(output)
             output_text = list(tokenizer.batch_decode(output))
-        return {'output_text': output_text}
+        output = {'output_text': output_text}
+        absl.logging.info(
+            '\n========= Output ========= \n'
+            + pprint.pformat(output) + '\n'
+        )
+        return output
 
     @app.post('/loglikelihood')
     def loglikelihood():
@@ -208,7 +215,12 @@ def main(argv):
                     inputs.attention_mask,
                 )
                 log_likelihood = jax.device_get(log_likelihood)
-        return {'log_likelihood': log_likelihood.tolist()}
+        output = {'log_likelihood': log_likelihood.tolist()}
+        absl.logging.info(
+            '\n========= Output ========= \n'
+            + pprint.pformat(output) + '\n'
+        )
+        return output
 
     with mesh:
         params = sharding_helper.put(params)
