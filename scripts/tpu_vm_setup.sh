@@ -30,6 +30,7 @@ wandb==0.13.5
 gcsfs==2022.11.0
 requests
 typing-extensions
+flask
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt

@@ -21,6 +21,7 @@ dependencies:
     - cudatoolkit=11.3
     - cuda-nvcc=11.3
     - cudnn
+    - flask
     - pip:
         - flax==0.6.0
         - optax==0.1.3
