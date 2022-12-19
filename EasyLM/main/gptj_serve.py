@@ -86,7 +86,6 @@ def main(argv):
     else:
         raise ValueError('Params must be loaded from checkpoint or huggingface!')
 
-    model = FlaxGPTJForCausalLMModule(gptj_config)
     hf_model = FlaxGPTJForCausalLM(
         gptj_config,
         input_shape=(1, FLAGS.seq_length),
@@ -124,6 +123,34 @@ def main(argv):
         ).sequences[:, input_tokens.shape[1]:]
         return output, rng_generator()
 
+    @partial(
+        pjit,
+        in_axis_resources=(model_ps, PS(), PS(), PS()),
+        out_axis_resources=(PS(), PS())
+    )
+    def log_likelihood_fn(params, rng, tokens, attention_mask):
+        rng_generator = JaxRNG(rng)
+        tokens = with_sharding_constraint(tokens, PS('dp'))
+        attention_mask = with_sharding_constraint(attention_mask, PS('dp'))
+        bos_tokens = jnp.full(
+            (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
+        )
+        bos_attention_mask = jnp.full((tokens.shape[0], 1), 1, dtype=jnp.int32)
+        input_tokens = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
+        input_attention_mask = jnp.concatenate(
+            [bos_attention_mask, attention_mask[:, :-1]], axis=1
+        )
+        logits = hf_model.module.apply(
+            params, input_tokens, attention_mask=input_attention_mask,
+            deterministic=False, rngs=rng_generator(gptj_config.rng_keys()),
+        ).logits
+        log_likelihood = jax.nn.log_softmax(logits, axis=-1)
+        indices = jnp.expand_dims(tokens, axis=-1)
+        log_likelihood = jnp.take_along_axis(log_likelihood, indices, axis=-1)
+        log_likelihood = jnp.squeeze(log_likelihood, axis=-1)
+        log_likelihood = jnp.sum(log_likelihood * attention_mask, axis=-1)
+        return log_likelihood, rng_generator()
+
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     lock = Lock()
     app = Flask(__name__)
@@ -157,10 +184,36 @@ def main(argv):
             output_text = list(tokenizer.batch_decode(output))
         return {'output_text': output_text}
 
+    @app.post('/loglikelihood')
+    def loglikelihood():
+        with lock:
+            nonlocal sharded_rng
+            data = request.get_json()
+            absl.logging.info(
+                '\n========= Serving Request ========= \n'
+                + pprint.pformat(data) + '\n'
+            )
+
+            input_text = data['input_text']
+            inputs = tokenizer(
+                input_text,
+                padding='max_length',
+                truncation=True,
+                max_length=FLAGS.seq_length,
+                return_tensors='np',
+            )
+            with mesh:
+                log_likelihood, sharded_rng = log_likelihood_fn(
+                    params, sharded_rng, inputs.input_ids,
+                    inputs.attention_mask,
+                )
+                log_likelihood = jax.device_get(log_likelihood)
+        return {'log_likelihood': log_likelihood.tolist()}
+
     with mesh:
         params = sharding_helper.put(params)
         sharded_rng = next_rng()
-        app.run(host=FLAGS.host, port=FLAGS.port, threaded=True, processes=1)
+        app.run(host=FLAGS.host, port=FLAGS.port)
 
 
 if __name__ == "__main__":
