@@ -281,7 +281,7 @@ def optax_add_scheduled_weight_decay(schedule_fn, mask=None):
 
     def update_fn(updates, state, params):
         if params is None:
-            raise ValueError(base.NO_PARAMS_MSG)
+            raise ValueError('Params cannot be None for weight decay!')
 
         weight_decay = schedule_fn(state.count)
         updates = jax.tree_util.tree_map(

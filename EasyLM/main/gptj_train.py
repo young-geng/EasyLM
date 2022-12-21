@@ -39,6 +39,7 @@ FLAGS_DEF = define_flags_with_default(
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
     total_steps=10000,
+    accumulate_gradient_step=1,
     lr=0.01,
     lr_warmup_steps=10000,
     opt_b1=0.9,
@@ -119,6 +120,9 @@ def main(argv):
             weight_decay_schedule, weight_decay_mask
         )
     )
+
+    if FLAGS.accumulate_gradient_step > 1:
+        optimizer = optax.MultiSteps(optimizer, FLAGS.accumulate_gradient_step)
 
     def init_fn(rng):
         rng_generator = JaxRNG(rng)
