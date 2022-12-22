@@ -47,6 +47,7 @@ FLAGS_DEF = define_flags_with_default(
     port=5007,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
+    dtype='',
     input_length=128,
     seq_length=512,
     top_k=50,
@@ -75,24 +76,36 @@ def main(argv):
 
     tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
 
-    if FLAGS.load_hf_pretrained != '':
-        gptj_config = GPTJConfig.from_pretrained(FLAGS.load_hf_pretrained)
-        params = gptj_config.load_pretrained(FLAGS.load_hf_pretrained)
-    elif FLAGS.load_checkpoint != '':
-        metadata = load_pickle(FLAGS.load_config)
-        gptj_config = metadata['gptj_config']
-        params = flax.core.frozen_dict.freeze(
-            restore_checkpoint(FLAGS.load_checkpoint, target=None)['params']
-        )
-    else:
-        raise ValueError('Params must be loaded from checkpoint or huggingface!')
+    with jax.default_device(jax.devices("cpu")[0]):
+        if FLAGS.load_hf_pretrained != '':
+            gptj_config = GPTJConfig.from_pretrained(FLAGS.load_hf_pretrained)
+            params = gptj_config.load_pretrained(FLAGS.load_hf_pretrained)
+        elif FLAGS.load_checkpoint != '':
+            metadata = load_pickle(FLAGS.load_config)
+            gptj_config = metadata['gptj_config']
+            params = flax.core.frozen_dict.freeze(
+                restore_checkpoint(FLAGS.load_checkpoint, target=None)['params']
+            )
+        else:
+            raise ValueError('Params must be loaded from checkpoint or huggingface!')
 
-    hf_model = FlaxGPTJForCausalLM(
-        gptj_config,
-        input_shape=(1, FLAGS.seq_length),
-        seed=FLAGS.seed,
-        _do_init=False
-    )
+        hf_model = FlaxGPTJForCausalLM(
+            gptj_config,
+            input_shape=(1, FLAGS.seq_length),
+            seed=FLAGS.seed,
+            _do_init=False
+        )
+
+        if FLAGS.dtype == 'fp32':
+            params = hf_model.to_fp32(params)
+        elif FLAGS.dtype == 'fp16':
+            params = hf_model.to_fp16(params)
+        elif FLAGS.dtype == 'bf16':
+            params = hf_model.to_bf16(params)
+        elif FLAGS.dtype == '':
+            pass  # No dtype conversion
+        else:
+            raise ValueError(f'Unsupported dtype: {FLAGS.dtype}')
 
     model_ps = match_partition_rules(
         GPTJConfig.get_partition_rules(), params
