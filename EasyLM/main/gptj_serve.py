@@ -39,12 +39,11 @@ from ..utils import (
 from ..models.gptj import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
 )
+from ..serving import LMServer
 
 
 FLAGS_DEF = define_flags_with_default(
     seed=42,
-    host='0.0.0.0',
-    port=5007,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
     dtype='',
@@ -52,12 +51,13 @@ FLAGS_DEF = define_flags_with_default(
     seq_length=512,
     top_k=50,
     top_p=1.0,
-    do_sample=True,
+    do_sample=False,
     num_beams=10,
     load_hf_pretrained='',
     load_checkpoint='',
     load_config='',
     tokenizer=GPTJConfig.get_tokenizer_config(),
+    lm_server=LMServer.get_default_config(),
 )
 FLAGS = absl.flags.FLAGS
 
@@ -117,7 +117,7 @@ def main(argv):
         in_axis_resources=(model_ps, PS(), PS(), PS(), PS()),
         out_axis_resources=(PS(), PS())
     )
-    def generate_fn(params, rng, input_tokens, attention_mask, hparams):
+    def generate_fn(params, rng, input_tokens, attention_mask, temperature):
         rng_generator = JaxRNG(rng)
         input_tokens = with_sharding_constraint(input_tokens, PS('dp'))
         attention_mask = with_sharding_constraint(attention_mask, PS('dp'))
@@ -130,7 +130,7 @@ def main(argv):
             pad_token_id=tokenizer.eos_token_id,
             bos_token_id=tokenizer.bos_token_id,
             eos_token_id=tokenizer.eos_token_id,
-            temperature=hparams['temperature'],
+            temperature=temperature,
             top_k=FLAGS.top_k,
             top_p=FLAGS.top_p,
             num_beams=FLAGS.num_beams,
@@ -167,78 +167,48 @@ def main(argv):
         return log_likelihood, rng_generator()
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
-    lock = Lock()
-    app = Flask(__name__)
 
-    @app.post('/generate')
-    def generate():
-        with lock:
-            nonlocal sharded_rng
-            data = request.get_json()
-            absl.logging.info(
-                '\n========= Serving Request ========= \n'
-                + pprint.pformat(data) + '\n'
-            )
-
-            input_text = data['input_text']
-            hparams = {'temperature': data.get('temperature', 1.0)}
-
-            inputs = tokenizer(
-                input_text,
-                padding='max_length',
-                truncation=True,
-                max_length=FLAGS.input_length,
-                return_tensors='np',
-            )
-            with mesh:
-                output, sharded_rng = generate_fn(
-                    params, sharded_rng, inputs.input_ids,
-                    inputs.attention_mask, hparams
-                )
-                output = jax.device_get(output)
-            output_text = list(tokenizer.batch_decode(output))
-        output = {'output_text': output_text}
-        absl.logging.info(
-            '\n========= Output ========= \n'
-            + pprint.pformat(output) + '\n'
+    def loglikelihood(input_text):
+        nonlocal sharded_rng
+        inputs = tokenizer(
+            input_text,
+            padding='max_length',
+            truncation=True,
+            max_length=FLAGS.seq_length,
+            return_tensors='np',
         )
-        return output
-
-    @app.post('/loglikelihood')
-    def loglikelihood():
-        with lock:
-            nonlocal sharded_rng
-            data = request.get_json()
-            absl.logging.info(
-                '\n========= Serving Request ========= \n'
-                + pprint.pformat(data) + '\n'
+        with mesh:
+            log_likelihood, sharded_rng = log_likelihood_fn(
+                params, sharded_rng, inputs.input_ids,
+                inputs.attention_mask,
             )
+            log_likelihood = jax.device_get(log_likelihood)
+        return log_likelihood
 
-            input_text = data['input_text']
-            inputs = tokenizer(
-                input_text,
-                padding='max_length',
-                truncation=True,
-                max_length=FLAGS.seq_length,
-                return_tensors='np',
-            )
-            with mesh:
-                log_likelihood, sharded_rng = log_likelihood_fn(
-                    params, sharded_rng, inputs.input_ids,
-                    inputs.attention_mask,
-                )
-                log_likelihood = jax.device_get(log_likelihood)
-        output = {'log_likelihood': log_likelihood.tolist()}
-        absl.logging.info(
-            '\n========= Output ========= \n'
-            + pprint.pformat(output) + '\n'
+    def generate(input_text, temperature):
+        nonlocal sharded_rng
+        inputs = tokenizer(
+            input_text,
+            padding='max_length',
+            truncation=True,
+            max_length=FLAGS.input_length,
+            return_tensors='np',
         )
-        return output
+        with mesh:
+            output, sharded_rng = generate_fn(
+                params, sharded_rng, inputs.input_ids,
+                inputs.attention_mask, temperature
+            )
+            output = jax.device_get(output)
+        output_text = list(tokenizer.batch_decode(output))
+        return output_text
+
+    lm_server = LMServer(FLAGS.lm_server, loglikelihood, generate)
 
     with mesh:
         params = sharding_helper.put(params)
         sharded_rng = next_rng()
-        app.run(host=FLAGS.host, port=FLAGS.port)
+        lm_server.run()
 
 
 if __name__ == "__main__":

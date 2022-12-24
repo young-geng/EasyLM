@@ -115,6 +115,7 @@ def main(argv):
             decay_rate=FLAGS.opt_b2,
             factored=False,
             clipping_threshold=None,
+            dtype_momentum=jnp.bfloat16,
         ),
         optax_add_scheduled_weight_decay(
             weight_decay_schedule, weight_decay_mask
