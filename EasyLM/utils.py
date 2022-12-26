@@ -17,7 +17,9 @@ from absl import logging
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from ml_collections.config_flags import config_flags
-from flax.training.checkpoints import save_checkpoint
+import jax
+import jax.numpy as jnp
+from flax.training.checkpoints import AsyncManager, save_checkpoint
 
 from .jax_utils import init_rng
 
@@ -46,6 +48,7 @@ class WandBLogger(object):
         config.project = "easy_lm"
         config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
+        config.async_checkpointing = True
         config.random_delay = 0.0
         config.experiment_id = config_dict.placeholder(str)
         config.anonymous = config_dict.placeholder(str)
@@ -85,6 +88,9 @@ class WandBLogger(object):
                 self.config.gcs_output_dir = os.path.join(
                     self.config.gcs_output_dir, self.config.experiment_id
                 )
+
+            if self.config.async_checkpointing:
+                self.flax_async_manager = AsyncManager()
 
         self._variant = copy(variant)
 
@@ -133,6 +139,9 @@ class WandBLogger(object):
                 ckpt_dir = os.path.join(self.config.gcs_output_dir, 'checkpoint')
             else:
                 ckpt_dir = os.path.join(self.config.output_dir, 'checkpoint')
+
+            if self.config.async_checkpointing:
+                kwargs['async_manager'] = self.flax_async_manager
             save_checkpoint(ckpt_dir, *args, **kwargs)
 
     @property
