@@ -48,6 +48,7 @@ FLAGS_DEF = define_flags_with_default(
     opt_b2=0.99,
     clip_gradient=1.0,
     weight_decay=1e-4,
+    bf16_momentum=False,
     load_hf_pretrained='',
     load_checkpoint='',
     load_dataset_state='',
@@ -117,6 +118,7 @@ def main(argv):
             decay_rate=FLAGS.opt_b2,
             factored=False,
             clipping_threshold=None,
+            dtype_momentum=jnp.bfloat16 if FLAGS.bf16_momentum else jnp.float32,
         ),
         optax_add_scheduled_weight_decay(
             weight_decay_schedule, weight_decay_mask
