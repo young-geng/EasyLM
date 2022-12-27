@@ -104,39 +104,14 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS(), PS(), PS()),
-        out_axis_resources=(PS(), PS())
+        in_axis_resources=(model_ps, PS(), PS()),
+        out_axis_resources=(PS(), PS(), PS())
     )
-    def generate_fn(params, rng, input_tokens, attention_mask, temperature):
+    def log_likelihood_fn(params, rng, batch):
+        batch = with_sharding_constraint(batch, PS('dp'))
         rng_generator = JaxRNG(rng)
-        input_tokens = with_sharding_constraint(input_tokens, PS('dp'))
-        attention_mask = with_sharding_constraint(attention_mask, PS('dp'))
-        output = hf_model.generate(
-            input_tokens,
-            attention_mask=attention_mask,
-            params=params['params'],
-            prng_key=rng_generator(),
-            max_length=FLAGS.seq_length,
-            pad_token_id=tokenizer.eos_token_id,
-            bos_token_id=tokenizer.bos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            temperature=temperature,
-            top_k=FLAGS.top_k,
-            top_p=FLAGS.top_p,
-            num_beams=FLAGS.num_beams,
-            do_sample=FLAGS.do_sample,
-        ).sequences[:, input_tokens.shape[1]:]
-        return output, rng_generator()
-
-    @partial(
-        pjit,
-        in_axis_resources=(model_ps, PS(), PS(), PS()),
-        out_axis_resources=(PS(), PS())
-    )
-    def log_likelihood_fn(params, rng, tokens, attention_mask):
-        rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(tokens, PS('dp'))
-        attention_mask = with_sharding_constraint(attention_mask, PS('dp'))
+        tokens, attention_mask = batch['tokens'], batch['attention_mask']
+        log_likelihood_mask = batch['log_likelihood_mask']
         bos_tokens = jnp.full(
             (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
         )
@@ -153,41 +128,95 @@ def main(argv):
         indices = jnp.expand_dims(tokens, axis=-1)
         log_likelihood = jnp.take_along_axis(log_likelihood, indices, axis=-1)
         log_likelihood = jnp.squeeze(log_likelihood, axis=-1)
-        log_likelihood = jnp.sum(log_likelihood * attention_mask, axis=-1)
-        return log_likelihood, rng_generator()
+        log_likelihood = jnp.sum(
+            log_likelihood * attention_mask * log_likelihood_mask, axis=-1
+        )
+        match_count = jnp.sum(
+            (jnp.argmax(logits, axis=-1) == tokens) * attention_mask * log_likelihood_mask,
+            axis=-1
+        )
+        total = jnp.sum(attention_mask * log_likelihood_mask, axis=-1)
+        is_greedy = match_count == total
+        return log_likelihood, is_greedy, rng_generator()
+
+    @partial(
+        pjit,
+        in_axis_resources=(model_ps, PS(), PS(), PS()),
+        out_axis_resources=(PS(), PS())
+    )
+    def generate_fn(params, rng, temperature, batch):
+        batch = with_sharding_constraint(batch, PS('dp'))
+        rng_generator = JaxRNG(rng)
+        output = hf_model.generate(
+            batch['input_tokens'],
+            attention_mask=batch['attention_mask'],
+            params=params['params'],
+            prng_key=rng_generator(),
+            max_length=FLAGS.seq_length,
+            pad_token_id=tokenizer.eos_token_id,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            temperature=temperature,
+            top_k=FLAGS.top_k,
+            top_p=FLAGS.top_p,
+            num_beams=FLAGS.num_beams,
+            do_sample=FLAGS.do_sample,
+        ).sequences[:, batch['input_tokens'].shape[1]:]
+        return output, rng_generator()
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
 
-    def loglikelihood(input_text):
+    def loglikelihood(prefix_text, text):
         nonlocal sharded_rng
-        inputs = tokenizer(
-            input_text,
+        prefix = tokenizer(
+            prefix_text,
             padding='max_length',
             truncation=True,
-            max_length=FLAGS.seq_length,
+            max_length=FLAGS.input_length,
             return_tensors='np',
         )
+        inputs = tokenizer(
+            text,
+            padding='max_length',
+            truncation=True,
+            max_length=FLAGS.seq_length - FLAGS.input_length,
+            return_tensors='np',
+        )
+        batch = {
+            'tokens': jnp.concatenate(
+                [prefix.input_ids, inputs.input_ids], axis=1
+            ),
+            'attention_mask': jnp.concatenate(
+                [prefix.attention_mask, inputs.attention_mask], axis=1
+            ),
+            'log_likelihood_mask': jnp.concatenate(
+                [jnp.zeros_like(prefix.attention_mask), jnp.ones_like(inputs.attention_mask)],
+                axis=1
+            ),
+        }
         with mesh:
-            log_likelihood, sharded_rng = log_likelihood_fn(
-                params, sharded_rng, inputs.input_ids,
-                inputs.attention_mask,
+            log_likelihood, is_greedy, sharded_rng = log_likelihood_fn(
+                params, sharded_rng, batch
             )
-            log_likelihood = jax.device_get(log_likelihood)
-        return log_likelihood
+            log_likelihood, is_greedy = jax.device_get((log_likelihood, is_greedy))
+        return log_likelihood, is_greedy
 
-    def generate(input_text, temperature):
+    def generate(text, temperature):
         nonlocal sharded_rng
         inputs = tokenizer(
-            input_text,
+            text,
             padding='max_length',
             truncation=True,
             max_length=FLAGS.input_length,
             return_tensors='np',
         )
         with mesh:
+            batch = {
+                'input_tokens': inputs.input_ids,
+                'attention_mask': inputs.attention_mask,
+            }
             output, sharded_rng = generate_fn(
-                params, sharded_rng, inputs.input_ids,
-                inputs.attention_mask, temperature
+                params, sharded_rng, temperature, batch
             )
             output = jax.device_get(output)
         output_text = list(tokenizer.batch_decode(output))

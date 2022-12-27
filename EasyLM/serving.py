@@ -22,6 +22,7 @@ class LMServer(object):
         config.name = 'lm_server'
         config.host = '0.0.0.0'
         config.port = 5007
+        config.batch_size = 1
         config.logging = True
         config.pre_compile = True
 
@@ -39,6 +40,12 @@ class LMServer(object):
         self.app.post('/loglikelihood')(self.loglikelihood)
         self.app.post('/generate')(self.generate)
 
+    @staticmethod
+    def to_list(x):
+        if isinstance(x, np.ndarray):
+            return x.tolist()
+        return x
+
     def loglikelihood(self):
         with self.lock:
             data = request.get_json()
@@ -48,13 +55,38 @@ class LMServer(object):
                     + pprint.pformat(data) + '\n'
                 )
 
-            input_text = data['input_text']
-            log_likelihood = self.loglikelihood_fn(input_text)
+            text = data['text']
+            if 'prefix_text' not in data:
+                prefix_text = ['' for _ in text]
+            else:
+                prefix_text = data['prefix_text']
 
-            if isinstance(log_likelihood, np.ndarray):
-                log_likelihood = log_likelihood.tolist()
+            log_likelihood = []
+            is_greedy = []
+            for i in range(0, len(text), self.config.batch_size):
+                batch_prefix_text = prefix_text[i:i + self.config.batch_size]
+                batch_text = text[i:i + self.config.batch_size]
+                batch_size = len(batch_text)
 
-            output = {'log_likelihood': log_likelihood}
+                if batch_size < self.config.batch_size:
+                    extra = self.config.batch_size - batch_size
+                    batch_prefix_text.extend(['a' for _ in range(extra)])
+                    batch_text.extend(['a' for _ in range(extra)])
+
+                batch_log_likelihood, batch_is_greedy = self.loglikelihood_fn(
+                    batch_prefix_text, batch_text
+                )
+                batch_log_likelihood = self.to_list(batch_log_likelihood)
+                batch_is_greedy = self.to_list(batch_is_greedy)
+                log_likelihood.extend(batch_log_likelihood[:batch_size])
+                is_greedy.extend(batch_is_greedy[:batch_size])
+
+            output = {
+                'prefix_text': prefix_text,
+                'text': text,
+                'log_likelihood': log_likelihood,
+                'is_greedy': is_greedy,
+            }
             if self.config.logging:
                 absl.logging.info(
                 '\n========= Output ========= \n'
@@ -71,10 +103,26 @@ class LMServer(object):
                     '\n========= Serving Generate Request ========= \n'
                     + pprint.pformat(data) + '\n'
                 )
-            input_text = data['input_text']
+            prefix_text = data['prefix_text']
             temperature = data.get('temperature', 1.0)
-            output_text = self.generate_fn(input_text, temperature)
-            output = {'output_text': output_text}
+
+            output_text = []
+            for i in range(0, len(prefix_text), self.config.batch_size):
+                batch_prefix_text = prefix_text[i:i + self.config.batch_size]
+                batch_size = len(batch_text)
+
+                if batch_size < self.config.batch_size:
+                    extra = self.config.batch_size - batch_size
+                    batch_prefix_text.extend(['a' for _ in range(extra)])
+
+                batch_output_text = self.generate_fn(batch_prefix_text, temperature)
+                output_text.extend(self.to_list(batch_output_text))
+
+            output = {
+                'prefix_text': prefix_text,
+                'temperature': temperature,
+                'output_text': output_text,
+            }
             if self.config.logging:
                 absl.logging.info(
                     '\n========= Output ========= \n'
@@ -84,7 +132,8 @@ class LMServer(object):
 
     def run(self):
         if self.config.pre_compile:
-            self.loglikelihood_fn(['pre_compile'])
-            self.generate_fn(['pre_compile'], 1.0)
+            pre_compile_data = ['a' for _ in range(self.config.batch_size)]
+            self.loglikelihood_fn(pre_compile_data, pre_compile_data)
+            self.generate_fn(pre_compile_data, 1.0)
         self.app.run(host=self.config.host, port=self.config.port)
 
