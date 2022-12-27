@@ -17,7 +17,6 @@ import flax
 from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
-from flax.training.checkpoints import restore_checkpoint
 import optax
 
 
@@ -29,7 +28,7 @@ from ..jax_utils import (
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle, user_flags_to_config_dict
+    load_pickle, load_checkpoint, user_flags_to_config_dict
 )
 from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
 
@@ -51,7 +50,6 @@ FLAGS_DEF = define_flags_with_default(
     load_dataset_state='',
     log_freq=50,
     save_model_freq=0,
-    save_model_keep=1,
     tokenizer=GPTJConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
     gptj=GPTJConfig.get_default_config(),
@@ -181,22 +179,19 @@ def main(argv):
     )
 
     def save_checkpoint(train_state):
-        logger.save_checkpoint(
-            sharding_helper.get(train_state), step=train_state.step,
-            overwrite=True, keep=FLAGS.save_model_keep,
-        )
-        save_data = dict(
+        metadata = dict(
             step=train_state.step,
             variant=variant,
             flags=flags_config_dict,
             dataset=dataset,
             gptj_config=gptj_config,
         )
-        logger.save_pickle(save_data, 'metadata.pkl')
+        logger.save_checkpoint(train_state, metadata)
+        logger.save_pickle(metadata, 'metadata.pkl')
 
     if FLAGS.load_checkpoint != '':
         with jax.default_device(jax.devices("cpu")[0]):
-            restored_checkpoint_state = restore_checkpoint(
+            restored_checkpoint_state, _ = load_checkpoint(
                 FLAGS.load_checkpoint, train_state_shapes
             )
             start_step = restored_checkpoint_state.step

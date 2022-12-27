@@ -19,7 +19,7 @@ from ml_collections.config_dict import config_dict
 from ml_collections.config_flags import config_flags
 import jax
 import jax.numpy as jnp
-from flax.training.checkpoints import AsyncManager, save_checkpoint
+import flax
 
 from .jax_utils import init_rng
 
@@ -48,7 +48,6 @@ class WandBLogger(object):
         config.project = "easy_lm"
         config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
-        config.async_checkpointing = True
         config.random_delay = 0.0
         config.experiment_id = config_dict.placeholder(str)
         config.anonymous = config_dict.placeholder(str)
@@ -88,9 +87,6 @@ class WandBLogger(object):
                 self.config.gcs_output_dir = os.path.join(
                     self.config.gcs_output_dir, self.config.experiment_id
                 )
-
-            if self.config.async_checkpointing:
-                self.flax_async_manager = AsyncManager()
 
         self._variant = copy(variant)
 
@@ -133,16 +129,11 @@ class WandBLogger(object):
                 with open(os.path.join(self.config.output_dir, filename), "wb") as fout:
                     pickle.dump(obj, fout)
 
-    def save_checkpoint(self, *args, **kwargs):
+    def save_checkpoint(self, train_state, metadata=None):
+        train_state = flax.serialization.to_bytes(train_state)
+        save_data = {'train_state': train_state, 'metadata': metadata}
         if self.enable:
-            if self.config.gcs_output_dir != "":
-                ckpt_dir = os.path.join(self.config.gcs_output_dir, 'checkpoint')
-            else:
-                ckpt_dir = os.path.join(self.config.output_dir, 'checkpoint')
-
-            if self.config.async_checkpointing:
-                kwargs['async_manager'] = self.flax_async_manager
-            save_checkpoint(ckpt_dir, *args, **kwargs)
+            self.save_pickle(save_data, 'checkpoint.pkl')
 
     @property
     def experiment_id(self):
@@ -239,6 +230,12 @@ def load_pickle(path):
         with open(path, "rb") as fin:
             data = pickle.load(fin)
     return data
+
+
+def load_checkpoint(path, target):
+    checkpoint_data = load_pickle(path)
+    train_state = flax.serialization.from_bytes(target, checkpoint_data['train_state'])
+    return train_state, checkpoint_data['metadata']
 
 
 def function_args_to_config(fn, none_arg_types=None, exclude_args=None, override_args=None):

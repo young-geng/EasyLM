@@ -22,7 +22,6 @@ import flax
 from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
-from flax.training.checkpoints import restore_checkpoint
 import optax
 
 
@@ -34,7 +33,7 @@ from ..jax_utils import (
 )
 from ..utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle
+    load_pickle, load_checkpoint
 )
 from ..models.gptj import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
@@ -55,7 +54,6 @@ FLAGS_DEF = define_flags_with_default(
     num_beams=10,
     load_hf_pretrained='',
     load_checkpoint='',
-    load_config='',
     tokenizer=GPTJConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
@@ -68,12 +66,6 @@ def main(argv):
         jax.distributed.initialize()
     set_random_seed(FLAGS.seed)
 
-    if FLAGS.load_checkpoint != '' and FLAGS.load_config == '':
-        FLAGS.load_config = os.path.join(
-            os.path.dirname(os.path.dirname(FLAGS.load_checkpoint)),
-            'metadata.pkl'
-        )
-
     tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
 
     with jax.default_device(jax.devices("cpu")[0]):
@@ -81,11 +73,9 @@ def main(argv):
             gptj_config = GPTJConfig.from_pretrained(FLAGS.load_hf_pretrained)
             params = gptj_config.load_pretrained(FLAGS.load_hf_pretrained)
         elif FLAGS.load_checkpoint != '':
-            metadata = load_pickle(FLAGS.load_config)
+            checkpoint, metadata = load_checkpoint(FLAGS.load_checkpoint, target=None)
             gptj_config = metadata['gptj_config']
-            params = flax.core.frozen_dict.freeze(
-                restore_checkpoint(FLAGS.load_checkpoint, target=None)['params']
-            )
+            params = flax.core.frozen_dict.freeze(checkpoint['params'])
         else:
             raise ValueError('Params must be loaded from checkpoint or huggingface!')
 
