@@ -15,6 +15,7 @@ from flask import Flask, request
 
 
 class LMServer(object):
+    """ HTTP server for serving langauge models. """
 
     @staticmethod
     def get_default_config(updates=None):
@@ -30,15 +31,25 @@ class LMServer(object):
             config.update(ConfigDict(updates).copy_and_resolve_references())
         return config
 
-    def __init__(self, config, loglikelihood_fn, generate_fn):
+    def __init__(self, config):
         self.config = self.get_default_config(config)
-        self.loglikelihood_fn = loglikelihood_fn
-        self.generate_fn = generate_fn
-
         self.lock = Lock()
         self.app = Flask(self.config.name)
         self.app.post('/loglikelihood')(self.loglikelihood)
+        self.app.post('/loglikelihood-rolling')(self.loglikelihood_rolling)
         self.app.post('/generate')(self.generate)
+
+    @staticmethod
+    def loglikelihood_fn(prefix_text, text):
+        raise NotImplementedError()
+
+    @staticmethod
+    def loglikelihood_rolling_fn(text):
+        raise NotImplementedError()
+
+    @staticmethod
+    def generate_fn(text, temperature):
+        raise NotImplementedError()
 
     @staticmethod
     def to_list(x):
@@ -95,6 +106,47 @@ class LMServer(object):
 
         return output
 
+    def loglikelihood_rolling(self):
+        with self.lock:
+            data = request.get_json()
+            if self.config.logging:
+                absl.logging.info(
+                    '\n========= Serving Log Likelihood Request ========= \n'
+                    + pprint.pformat(data) + '\n'
+                )
+
+            text = data['text']
+            log_likelihood = []
+            is_greedy = []
+            for i in range(0, len(text), self.config.batch_size):
+                batch_text = text[i:i + self.config.batch_size]
+                batch_size = len(batch_text)
+
+                if batch_size < self.config.batch_size:
+                    extra = self.config.batch_size - batch_size
+                    batch_text.extend(['a' for _ in range(extra)])
+
+                batch_log_likelihood, batch_is_greedy = self.loglikelihood_rolling_fn(
+                    batch_text
+                )
+                batch_log_likelihood = self.to_list(batch_log_likelihood)
+                batch_is_greedy = self.to_list(batch_is_greedy)
+                log_likelihood.extend(batch_log_likelihood[:batch_size])
+                is_greedy.extend(batch_is_greedy[:batch_size])
+
+            output = {
+                'text': text,
+                'log_likelihood': log_likelihood,
+                'is_greedy': is_greedy,
+            }
+            if self.config.logging:
+                absl.logging.info(
+                '\n========= Output ========= \n'
+                + pprint.pformat(output) + '\n'
+            )
+
+        return output
+
     def generate(self):
         with self.lock:
             data = request.get_json()
@@ -135,5 +187,6 @@ class LMServer(object):
             pre_compile_data = ['a' for _ in range(self.config.batch_size)]
             self.loglikelihood_fn(pre_compile_data, pre_compile_data)
             self.generate_fn(pre_compile_data, 1.0)
+            self.loglikelihood_rolling_fn(pre_compile_data)
         self.app.run(host=self.config.host, port=self.config.port)
 
