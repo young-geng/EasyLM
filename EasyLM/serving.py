@@ -26,6 +26,8 @@ class LMServer(object):
         config.batch_size = 1
         config.logging = True
         config.pre_compile = True
+        config.default_temperature = 1.0
+        config.default_max_length = 5000
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -35,20 +37,25 @@ class LMServer(object):
         self.config = self.get_default_config(config)
         self.lock = Lock()
         self.app = Flask(self.config.name)
-        self.app.post('/loglikelihood')(self.loglikelihood)
-        self.app.post('/loglikelihood-rolling')(self.loglikelihood_rolling)
-        self.app.post('/generate')(self.generate)
+        self.app.post('/loglikelihood')(self.serve_loglikelihood)
+        self.app.post('/loglikelihood-rolling')(self.serve_loglikelihood_rolling)
+        self.app.post('/generate')(self.serve_generate)
+        self.app.post('/greedy-until')(self.serve_greedy_until)
 
     @staticmethod
-    def loglikelihood_fn(prefix_text, text):
+    def loglikelihood(prefix_text, text):
         raise NotImplementedError()
 
     @staticmethod
-    def loglikelihood_rolling_fn(text):
+    def loglikelihood_rolling(text):
         raise NotImplementedError()
 
     @staticmethod
-    def generate_fn(text, temperature):
+    def generate(text, temperature):
+        raise NotImplementedError()
+
+    @staticmethod
+    def greedy_until(prefix_text, until, max_length):
         raise NotImplementedError()
 
     @staticmethod
@@ -57,7 +64,7 @@ class LMServer(object):
             return x.tolist()
         return x
 
-    def loglikelihood(self):
+    def serve_loglikelihood(self):
         with self.lock:
             data = request.get_json()
             if self.config.logging:
@@ -84,7 +91,7 @@ class LMServer(object):
                     batch_prefix_text.extend(['a' for _ in range(extra)])
                     batch_text.extend(['a' for _ in range(extra)])
 
-                batch_log_likelihood, batch_is_greedy = self.loglikelihood_fn(
+                batch_log_likelihood, batch_is_greedy = self.loglikelihood(
                     batch_prefix_text, batch_text
                 )
                 batch_log_likelihood = self.to_list(batch_log_likelihood)
@@ -106,7 +113,7 @@ class LMServer(object):
 
         return output
 
-    def loglikelihood_rolling(self):
+    def serve_loglikelihood_rolling(self):
         with self.lock:
             data = request.get_json()
             if self.config.logging:
@@ -126,7 +133,7 @@ class LMServer(object):
                     extra = self.config.batch_size - batch_size
                     batch_text.extend(['a' for _ in range(extra)])
 
-                batch_log_likelihood, batch_is_greedy = self.loglikelihood_rolling_fn(
+                batch_log_likelihood, batch_is_greedy = self.loglikelihood_rolling(
                     batch_text
                 )
                 batch_log_likelihood = self.to_list(batch_log_likelihood)
@@ -147,7 +154,7 @@ class LMServer(object):
 
         return output
 
-    def generate(self):
+    def serve_generate(self):
         with self.lock:
             data = request.get_json()
             if self.config.logging:
@@ -156,19 +163,19 @@ class LMServer(object):
                     + pprint.pformat(data) + '\n'
                 )
             prefix_text = data['prefix_text']
-            temperature = data.get('temperature', 1.0)
+            temperature = data.get('temperature', self.config.default_temperature)
 
             output_text = []
             for i in range(0, len(prefix_text), self.config.batch_size):
                 batch_prefix_text = prefix_text[i:i + self.config.batch_size]
-                batch_size = len(batch_text)
+                batch_size = len(batch_prefix_text)
 
                 if batch_size < self.config.batch_size:
                     extra = self.config.batch_size - batch_size
                     batch_prefix_text.extend(['a' for _ in range(extra)])
 
-                batch_output_text = self.generate_fn(batch_prefix_text, temperature)
-                output_text.extend(self.to_list(batch_output_text))
+                batch_output_text = self.generate(batch_prefix_text, temperature)
+                output_text.extend(self.to_list(batch_output_text)[:batch_size])
 
             output = {
                 'prefix_text': prefix_text,
@@ -182,11 +189,48 @@ class LMServer(object):
                 )
         return output
 
+    def serve_greedy_until(self):
+        with self.lock:
+            data = request.get_json()
+            if self.config.logging:
+                absl.logging.info(
+                    '\n========= Serving Greedy Until Request ========= \n'
+                    + pprint.pformat(data) + '\n'
+                )
+            prefix_text = data['prefix_text']
+            until = data['until']
+            max_length = data.get('max_length', self.config.default_max_length)
+
+            output_text = []
+            for i in range(0, len(prefix_text), self.config.batch_size):
+                batch_prefix_text = prefix_text[i:i + self.config.batch_size]
+                batch_until = until[i:i + self.config.batch_size]
+                batch_size = len(batch_prefix_text)
+
+                batch_output_text = self.greedy_until(batch_prefix_text, batch_until, max_length)
+                output_text.extend(self.to_list(batch_output_text)[:batch_size])
+
+            output = {
+                'prefix_text': prefix_text,
+                'until': until,
+                'max_length': max_length,
+                'output_text': output_text,
+            }
+            if self.config.logging:
+                absl.logging.info(
+                    '\n========= Output ========= \n'
+                    + pprint.pformat(output) + '\n'
+                )
+        return output
+
     def run(self):
         if self.config.pre_compile:
             pre_compile_data = ['a' for _ in range(self.config.batch_size)]
-            self.loglikelihood_fn(pre_compile_data, pre_compile_data)
-            self.generate_fn(pre_compile_data, 1.0)
-            self.loglikelihood_rolling_fn(pre_compile_data)
+            self.loglikelihood(pre_compile_data, pre_compile_data)
+            self.generate(pre_compile_data, 1.0)
+            self.loglikelihood_rolling(pre_compile_data)
+            self.greedy_until(
+                pre_compile_data, pre_compile_data,self.config.default_max_length
+            )
         self.app.run(host=self.config.host, port=self.config.port)
 

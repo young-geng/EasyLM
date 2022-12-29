@@ -46,8 +46,8 @@ FLAGS_DEF = define_flags_with_default(
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
     dtype='',
-    input_length=128,
-    seq_length=512,
+    input_length=256,
+    seq_length=1024,
     top_k=50,
     top_p=1.0,
     do_sample=False,
@@ -158,6 +158,28 @@ def main(argv):
         ).sequences[:, batch['input_tokens'].shape[1]:]
         return output, rng_generator()
 
+    @partial(
+        pjit,
+        in_axis_resources=(model_ps, PS(), PS()),
+        out_axis_resources=(PS(), PS())
+    )
+    def forward_greedy_generate(params, rng, batch):
+        batch = with_sharding_constraint(batch, PS('dp'))
+        rng_generator = JaxRNG(rng)
+        output = hf_model.generate(
+            batch['input_tokens'],
+            attention_mask=batch['attention_mask'],
+            params=params['params'],
+            prng_key=rng_generator(),
+            max_length=FLAGS.seq_length,
+            pad_token_id=tokenizer.eos_token_id,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            num_beams=1,
+            do_sample=False,
+        ).sequences[:, batch['input_tokens'].shape[1]:]
+        return output, rng_generator()
+
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
         params = sharding_helper.put(params)
@@ -166,7 +188,7 @@ def main(argv):
     class GPTJServer(LMServer):
 
         @staticmethod
-        def loglikelihood_fn(prefix_text, text):
+        def loglikelihood(prefix_text, text):
             nonlocal sharded_rng
             prefix = tokenizer(
                 prefix_text,
@@ -214,7 +236,7 @@ def main(argv):
             return loglikelihood, is_greedy
 
         @staticmethod
-        def loglikelihood_rolling_fn(text):
+        def loglikelihood_rolling(text):
             nonlocal sharded_rng
             inputs = tokenizer(
                 text,
@@ -272,8 +294,6 @@ def main(argv):
                         output_mask=output_mask[:, i:i + FLAGS.seq_length],
                     )
 
-                print({k: v.shape for k, v in batch.items()})
-
                 with mesh:
                     loglikelihood, is_greedy, sharded_rng = forward_loglikelihood(
                         params, sharded_rng, batch
@@ -286,7 +306,7 @@ def main(argv):
             return total_loglikelihood, total_is_greedy
 
         @staticmethod
-        def generate_fn(text, temperature):
+        def generate(text, temperature):
             nonlocal sharded_rng
             inputs = tokenizer(
                 text,
@@ -295,17 +315,73 @@ def main(argv):
                 max_length=FLAGS.input_length,
                 return_tensors='np',
             )
+            batch = dict(
+                input_tokens=inputs.input_ids,
+                attention_mask=inputs.attention_mask,
+            )
             with mesh:
-                batch = {
-                    'input_tokens': inputs.input_ids,
-                    'attention_mask': inputs.attention_mask,
-                }
                 output, sharded_rng = forward_generate(
                     params, sharded_rng, temperature, batch
                 )
                 output = jax.device_get(output)
             output_text = list(tokenizer.batch_decode(output))
             return output_text
+
+        @staticmethod
+        def greedy_until(prefix_text, until, max_length):
+            nonlocal sharded_rng
+            all_outputs = []
+            for pf, ut in zip(prefix_text, until):
+                total_length = 0
+                total_generated = ''
+
+                while total_length < max_length:
+                    pf_tokens = tokenizer(
+                        pf,
+                        padding=False,
+                        truncation=False,
+                        max_length=np.iinfo(np.int32).max,
+                        return_tensors='np',
+                    )
+                    input_tokens = pf_tokens.input_ids
+                    attention_mask = pf_tokens.attention_mask
+
+                    if input_tokens.shape[1] < FLAGS.input_length:
+                        extra = FLAGS.input_length - input_tokens.shape[1]
+                        pad_tokens = np.full(
+                            (1, extra), tokenizer.pad_token_id, dtype=np.int32
+                        )
+                        input_tokens = np.concatenate(
+                            [pad_tokens, input_tokens], axis=1
+                        )
+                        pad_attention = np.zeros((1, extra), dtype=attention_mask.dtype)
+                        attention_mask = np.concatenate(
+                            [pad_attention, attention_mask], axis=1
+                        )
+                    elif input_tokens.shape[1] > FLAGS.input_length:
+                        input_tokens = input_tokens[:, -FLAGS.input_length:]
+                        attention_mask = attention_mask[:, -FLAGS.input_length:]
+
+                    batch = dict(input_tokens=input_tokens, attention_mask=attention_mask)
+
+                    with mesh:
+                        output, sharded_rng = forward_greedy_generate(
+                            params, sharded_rng, batch
+                        )
+                        output = jax.device_get(output)
+
+                    total_length += output.shape[1]
+                    output_text = tokenizer.batch_decode(output)[0]
+                    total_generated = total_generated + output_text
+                    pf = pf + output_text
+
+                    if ut in total_generated:
+                        break
+
+                all_outputs.append(total_generated)
+
+            return all_outputs
+
 
     server = GPTJServer(FLAGS.lm_server)
     server.run()
