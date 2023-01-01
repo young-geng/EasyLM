@@ -24,7 +24,7 @@ class LMServer(object):
         config.host = '0.0.0.0'
         config.port = 5007
         config.batch_size = 1
-        config.logging = True
+        config.logging = False
         config.pre_compile = True
         config.default_temperature = 1.0
         config.default_max_length = 5000
@@ -81,7 +81,7 @@ class LMServer(object):
 
             log_likelihood = []
             is_greedy = []
-            for i in range(0, len(text), self.config.batch_size):
+            for i in trange(0, len(text), self.config.batch_size, ncols=0):
                 batch_prefix_text = prefix_text[i:i + self.config.batch_size]
                 batch_text = text[i:i + self.config.batch_size]
                 batch_size = len(batch_text)
@@ -125,7 +125,7 @@ class LMServer(object):
             text = data['text']
             log_likelihood = []
             is_greedy = []
-            for i in range(0, len(text), self.config.batch_size):
+            for i in trange(0, len(text), self.config.batch_size, ncols=0):
                 batch_text = text[i:i + self.config.batch_size]
                 batch_size = len(batch_text)
 
@@ -166,7 +166,7 @@ class LMServer(object):
             temperature = data.get('temperature', self.config.default_temperature)
 
             output_text = []
-            for i in range(0, len(prefix_text), self.config.batch_size):
+            for i in trange(0, len(prefix_text), self.config.batch_size, ncols=0):
                 batch_prefix_text = prefix_text[i:i + self.config.batch_size]
                 batch_size = len(batch_prefix_text)
 

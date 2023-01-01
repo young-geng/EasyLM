@@ -117,8 +117,10 @@ def main(argv):
 
         logits = hf_model.module.apply(
             params, input_tokens, attention_mask=input_mask,
-            deterministic=False, rngs=rng_generator(gptj_config.rng_keys()),
+            deterministic=True, rngs=rng_generator(gptj_config.rng_keys()),
         ).logits
+        if gptj_config.n_real_tokens is not None:
+          logits = logits.at[:, :, gptj_config.n_real_tokens:].set(-1e8)
         loglikelihood = jax.nn.log_softmax(logits, axis=-1)
         indices = jnp.expand_dims(output_tokens, axis=-1)
         loglikelihood = jnp.take_along_axis(loglikelihood, indices, axis=-1)
@@ -209,15 +211,12 @@ def main(argv):
                 (output_tokens.shape[0], 1), tokenizer.bos_token_id, dtype=np.int32
             )
             input_tokens = np.concatenate([bos_tokens, output_tokens[:, :-1]], axis=-1)
-            bos_mask = np.ones((output_tokens.shape[0], 1), dtype=inputs.attention_mask.dtype)
             input_mask = np.concatenate(
                 [prefix.attention_mask, inputs.attention_mask], axis=1
             )
-            input_mask = np.concatenate([bos_mask, input_mask[:, :-1]], axis=-1)
             output_mask = np.concatenate(
                 [np.zeros_like(prefix.attention_mask), inputs.attention_mask], axis=1
             )
-
             loglikelihood_mask = np.concatenate(
                 [np.zeros_like(prefix.attention_mask), np.ones_like(inputs.attention_mask)],
                 axis=1
@@ -247,7 +246,7 @@ def main(argv):
             )
             batch_size = inputs.input_ids.shape[0]
             output_tokens = inputs.input_ids
-            output_mask = inputs.attention_mask
+            attention_mask = inputs.attention_mask
 
             if output_tokens.shape[1] < FLAGS.seq_length:
                 padding_length = FLAGS.seq_length - output_tokens.shape[1]
@@ -258,15 +257,13 @@ def main(argv):
                 pad_mask = np.zeros(
                     (batch_size, padding_length), dtype=inputs.attention_mask.dtype
                 )
-                output_mask = np.concatenate([output_mask, pad_mask], axis=-1)
+                attention_mask = np.concatenate([attention_mask, pad_mask], axis=-1)
 
             bos_tokens = np.full(
                 (batch_size, 1), tokenizer.bos_token_id, dtype=np.int32
             )
             input_tokens = np.concatenate([bos_tokens, output_tokens[:, :-1]], axis=-1)
             bos_mask = np.ones((batch_size, 1), dtype=inputs.attention_mask.dtype)
-            input_mask = np.concatenate([bos_mask, output_mask[:, :-1]], axis=-1)
-
             total_seq_length = output_tokens.shape[1]
 
             total_loglikelihood = 0.0
@@ -275,13 +272,13 @@ def main(argv):
             for i in range(0, total_seq_length, FLAGS.seq_length):
                 # Last window
                 if i + FLAGS.seq_length > total_seq_length:
-                    last_output_mask = np.copy(output_mask[:, -FLAGS.seq_length:])
+                    last_output_mask = np.copy(attention_mask[:, -FLAGS.seq_length:])
                     last_output_mask[:, :i - total_seq_length] = 0.0
 
                     batch = dict(
                         input_tokens=input_tokens[:, -FLAGS.seq_length:],
                         output_tokens=output_tokens[:, -FLAGS.seq_length:],
-                        input_mask=input_mask[:, -FLAGS.seq_length:],
+                        input_mask=attention_mask[:, -FLAGS.seq_length:],
                         output_mask=last_output_mask,
                     )
 
@@ -290,8 +287,8 @@ def main(argv):
                     batch = dict(
                         input_tokens=input_tokens[:, i:i + FLAGS.seq_length],
                         output_tokens=output_tokens[:, i:i + FLAGS.seq_length],
-                        input_mask=input_mask[:, i:i + FLAGS.seq_length],
-                        output_mask=output_mask[:, i:i + FLAGS.seq_length],
+                        input_mask=attention_mask[:, i:i + FLAGS.seq_length],
+                        output_mask=attention_mask[:, i:i + FLAGS.seq_length],
                     )
 
                 with mesh:

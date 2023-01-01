@@ -191,7 +191,7 @@ class GPTJConfig(PretrainedConfig):
         eos_token_id=50256,
         tie_word_embeddings=False,
         gradient_checkpointing=True,
-        n_real_tokens=None,
+        n_real_tokens=50257,
         fcm_min_ratio=0.0,
         fcm_max_ratio=0.0,
         **kwargs
@@ -229,7 +229,6 @@ class GPTJConfig(PretrainedConfig):
     def get_default_config(cls, updates=None):
         none_arg_types = dict(
             n_inner=int,
-            n_real_tokens=int,
             rotary_dim=int,
         )
         config = function_args_to_config(cls.__init__, none_arg_types=none_arg_types)
