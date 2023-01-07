@@ -75,7 +75,7 @@ def main(argv):
     set_random_seed(FLAGS.seed)
 
     if FLAGS.load_dataset_state != '':
-        dataset = load_pickle(FLAGS.load_dataset_state)['dataset']
+        dataset = load_pickle(FLAGS.load_dataset_state)
     else:
         tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
         dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
@@ -185,11 +185,11 @@ def main(argv):
             step=train_state.step,
             variant=variant,
             flags=flags_config_dict,
-            dataset=dataset,
             gptj_config=gptj_config,
         )
         logger.save_checkpoint(train_state, metadata)
         logger.save_pickle(metadata, 'metadata.pkl')
+        logger.save_pickle(dataset, 'dataset.pkl')
 
     if FLAGS.load_checkpoint != '':
         with jax.default_device(jax.devices("cpu")[0]):
