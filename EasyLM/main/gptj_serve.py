@@ -76,6 +76,7 @@ def main(argv):
             checkpoint, metadata = load_checkpoint(FLAGS.load_checkpoint, target=None)
             gptj_config = metadata['gptj_config']
             params = flax.core.frozen_dict.freeze(checkpoint['params'])
+            del checkpoint
         else:
             raise ValueError('Params must be loaded from checkpoint or huggingface!')
 

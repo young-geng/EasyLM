@@ -180,6 +180,7 @@ def main(argv):
     )
 
     def save_checkpoint(train_state):
+        train_state = sharding_helper.get(train_state)
         metadata = dict(
             step=train_state.step,
             variant=variant,

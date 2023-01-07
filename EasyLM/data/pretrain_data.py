@@ -96,27 +96,26 @@ class H5Dataset(object):
     def __init__(self, config, tokenizer, start_index=0):
         self.config = self.get_default_config(config)
         assert self.config.path != ''
-
-        if self.config.path.startswith('gs://'):
-            # Loading from GCS
-            self.h5_file = h5py.File(
-                gcsfs.GCSFileSystem().open(self.config.path, cache_type='block'),
-                'r'
-            )
-        else:
-            self.h5_file = h5py.File(self.config.path, 'r')
-
         self._tokenizer = tokenizer
         self.index = start_index
 
     def __iter__(self):
+        if self.config.path.startswith('gs://'):
+            # Loading from GCS
+            h5_file = h5py.File(
+                gcsfs.GCSFileSystem().open(self.config.path, cache_type='block'),
+                'r'
+            )
+        else:
+            h5_file = h5py.File(self.config.path, 'r')
+
         chunk_size = self.config.batch_size * self.config.seq_length
         tokens = []
         while True:
-            with BytesIO(self.h5_file[self.config.field][self.index]) as fin:
+            with BytesIO(h5_file[self.config.field][self.index]) as fin:
                 text = fin.read().decode('utf-8')
 
-            self.index = (self.index + 1) % self.h5_file[self.config.field].shape[0]
+            self.index = (self.index + 1) % h5_file[self.config.field].shape[0]
             tokens.extend(self.tokenizer.encode(text))
             tokens.append(self.tokenizer.eos_token_id)
             while len(tokens) > chunk_size:
@@ -142,10 +141,6 @@ class H5Dataset(object):
     @property
     def tokenizer(self):
         return self._tokenizer
-
-    @property
-    def dataset(self):
-        return self._dataset
 
     @property
     def vocab_size(self):
