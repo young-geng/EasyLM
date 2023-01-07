@@ -7,6 +7,7 @@ import uuid
 import inspect
 from copy import copy
 from socket import gethostname
+from concurrent.futures import ThreadPoolExecutor
 
 import absl.flags
 import cloudpickle as pickle
@@ -49,6 +50,7 @@ class WandBLogger(object):
         config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
         config.random_delay = 0.0
+        config.async_checkpointing = True
         config.experiment_id = config_dict.placeholder(str)
         config.anonymous = config_dict.placeholder(str)
         config.notes = config_dict.placeholder(str)
@@ -112,6 +114,7 @@ class WandBLogger(object):
                 ),
                 mode="online" if self.config.online else "offline",
             )
+            self.async_manager = ThreadPoolExecutor(max_workers=1)
         else:
             self.run = None
 
@@ -133,7 +136,10 @@ class WandBLogger(object):
         train_state = flax.serialization.to_bytes(train_state)
         save_data = {'train_state': train_state, 'metadata': metadata}
         if self.enable:
-            self.save_pickle(save_data, 'checkpoint.pkl')
+            if self.config.async_checkpointing:
+                self.async_manager.submit(self.save_pickle, save_data, 'checkpoint.pkl')
+            else:
+                self.save_pickle(save_data, 'checkpoint.pkl')
 
     @property
     def experiment_id(self):
