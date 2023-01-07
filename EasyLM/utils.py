@@ -50,7 +50,7 @@ class WandBLogger(object):
         config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
         config.random_delay = 0.0
-        config.async_checkpointing = True
+        config.async_pickling = True
         config.experiment_id = config_dict.placeholder(str)
         config.anonymous = config_dict.placeholder(str)
         config.notes = config_dict.placeholder(str)
@@ -64,6 +64,7 @@ class WandBLogger(object):
     def __init__(self, config, variant, enable=True):
         self.enable = enable
         self.config = self.get_default_config(config)
+        self.async_manager = ThreadPoolExecutor(max_workers=1)
 
         if self.config.experiment_id is None:
             self.config.experiment_id = uuid.uuid4().hex
@@ -114,7 +115,6 @@ class WandBLogger(object):
                 ),
                 mode="online" if self.config.online else "offline",
             )
-            self.async_manager = ThreadPoolExecutor(max_workers=1)
         else:
             self.run = None
 
@@ -122,7 +122,7 @@ class WandBLogger(object):
         if self.enable:
             self.run.log(*args, **kwargs)
 
-    def save_pickle(self, obj, filename):
+    def _save_pickle_worker(self, obj, filename):
         if self.enable:
             if self.config.gcs_output_dir != "":
                 path = os.path.join(self.config.gcs_output_dir, filename)
@@ -132,14 +132,11 @@ class WandBLogger(object):
                 with open(os.path.join(self.config.output_dir, filename), "wb") as fout:
                     pickle.dump(obj, fout)
 
-    def save_checkpoint(self, train_state, metadata=None):
-        train_state = flax.serialization.to_bytes(train_state)
-        save_data = {'train_state': train_state, 'metadata': metadata}
-        if self.enable:
-            if self.config.async_checkpointing:
-                self.async_manager.submit(self.save_pickle, save_data, 'checkpoint.pkl')
-            else:
-                self.save_pickle(save_data, 'checkpoint.pkl')
+    def save_pickle(self, obj, filename):
+        if self.config.async_pickling:
+            self.async_manager.submit(self._save_pickle_worker, obj, filename)
+        else:
+            self._save_pickle_worker(obj, filename)
 
     @property
     def experiment_id(self):

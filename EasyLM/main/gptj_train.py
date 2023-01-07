@@ -181,14 +181,17 @@ def main(argv):
 
     def save_checkpoint(train_state):
         train_state = sharding_helper.get(train_state)
+        step = int(train_state.step)
+        train_state = flax.serialization.to_bytes(train_state)
         metadata = dict(
-            step=train_state.step,
+            step=step,
             variant=variant,
             flags=flags_config_dict,
             gptj_config=gptj_config,
         )
-        logger.save_checkpoint(train_state, metadata)
+        checkpoint = dict(train_state=train_state, metadata=metadata)
         logger.save_pickle(metadata, 'metadata.pkl')
+        logger.save_pickle(checkpoint, 'checkpoint.pkl')
         logger.save_pickle(dataset, 'dataset.pkl')
 
     if FLAGS.load_checkpoint != '':
