@@ -1,5 +1,5 @@
 # EasyLM
-Easy to use model parallel large language models training in JAX/Flax with pjit
+Easy to use model parallel large language models training and evaluation in JAX/Flax with pjit
 support on cloud TPU pods.
 
 Building on top of Hugginface's [transformers](https://huggingface.co/docs/transformers/main/en/index)
@@ -14,7 +14,7 @@ the model weights and training data across multiple accelerators. Currently,
 EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
 training on Google Cloud TPU Pods.
 
-Currently, the following models are supported and more models are coming soon:
+Currently, the following models are supported:
 * [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B), with support for
 [Forgetful Causal Masking (FCM)](https://arxiv.org/abs/2210.13432)
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
@@ -56,7 +56,33 @@ python -m EasyLM.main.gptj_train
 For Cloud TPU Pods, the same training command needs to be invoked on each host
 in the pod.
 
+## Serving and Evaluating Pre-trained Models
+Pretrained langauge models can be served as an HTTP server and evaluated using
+(lm-eval-harness)[https://github.com/EleutherAI/lm-evaluation-harness]. Use the
+following command to launch the HTTP server for GPT-J with pretrained weights
+from Huggingface transformers:
 
+```shell
+python -m EasyLM.main.gptj_serve \
+    --load_hf_pretrained='EleutherAI/gpt-j-6B' \
+    --dtype='bf16' \
+    --input_length=512 \
+    --seq_length=2048 \
+    --lm_server.host='127.0.0.1' \
+    --lm_server.pre_compile='loglikelihood' \
+    --lm_server.batch_size=2
+```
+
+Use the following command to evaluate the the langauge model served with the
+HTTP server:
+```shell
+python -m EasyLM.main.lm_eval \
+    --lm_server_url='http://localhost:5007/' \
+    --tasks='wsc,piqa,winogrande,openbookqa,logiqa' \
+    --shots=0
+```
+
+You can change the number of shots and the list of tasks.
 
 
 ## Credits

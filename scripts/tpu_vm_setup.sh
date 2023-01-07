@@ -31,6 +31,7 @@ gcsfs==2022.11.0
 requests
 typing-extensions
 flask
+lm-eval
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt
