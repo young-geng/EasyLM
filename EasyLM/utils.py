@@ -21,6 +21,8 @@ from ml_collections.config_flags import config_flags
 import jax
 import jax.numpy as jnp
 import flax
+from flax.serialization import from_bytes, to_bytes
+import msgpack
 
 from .jax_utils import init_rng
 
@@ -50,7 +52,7 @@ class WandBLogger(object):
         config.output_dir = "/tmp/easy_lm"
         config.gcs_output_dir = ""
         config.random_delay = 0.0
-        config.async_pickling = True
+        config.async_save = True
         config.experiment_id = config_dict.placeholder(str)
         config.anonymous = config_dict.placeholder(str)
         config.notes = config_dict.placeholder(str)
@@ -126,17 +128,37 @@ class WandBLogger(object):
         if self.enable:
             if self.config.gcs_output_dir != "":
                 path = os.path.join(self.config.gcs_output_dir, filename)
-                with gcsfs.GCSFileSystem().open(path, "wb") as fout:
-                    pickle.dump(obj, fout)
             else:
-                with open(os.path.join(self.config.output_dir, filename), "wb") as fout:
-                    pickle.dump(obj, fout)
+                path = os.path.join(self.config.output_dir, filename)
+
+            with open_file(path, "wb") as fout:
+                pickle.dump(obj, fout)
 
     def save_pickle(self, obj, filename):
-        if self.config.async_pickling:
+        if self.config.async_save:
             self.async_manager.submit(self._save_pickle_worker, obj, filename)
         else:
             self._save_pickle_worker(obj, filename)
+
+    def _save_checkpoint_worker(self, train_state, filename):
+        if self.enable:
+            if self.config.gcs_output_dir != "":
+                path = os.path.join(self.config.gcs_output_dir, filename)
+            else:
+                path = os.path.join(self.config.output_dir, filename)
+
+            packer = msgpack.Packer()
+            flattend_train_state = flax.traverse_util.flatten_dict(train_state)
+            with open_file(path, "wb") as fout:
+                for key, value in flattend_train_state.items():
+                    fout.write(packer.pack((key, to_bytes(value))))
+
+    def save_checkpoint(self, train_state, filename):
+        train_state = flax.serialization.to_state_dict(train_state)
+        if self.config.async_save:
+            self.async_manager.submit(self._save_checkpoint_worker, train_state, filename)
+        else:
+            self._save_checkpoint_worker(train_state, filename)
 
     @property
     def experiment_id(self):
@@ -225,20 +247,27 @@ def prefix_metrics(metrics, prefix):
     return {"{}/{}".format(prefix, key): value for key, value in metrics.items()}
 
 
-def load_pickle(path):
+def open_file(path, mode='rb'):
     if path.startswith("gs://"):
-        with gcsfs.GCSFileSystem().open(path) as fin:
-            data = pickle.load(fin)
+        return gcsfs.GCSFileSystem().open(path, mode, cache_type='block')
     else:
-        with open(path, "rb") as fin:
-            data = pickle.load(fin)
+        return open(path, mode)
+
+
+def load_pickle(path):
+    with open_file(path, 'rb') as fin:
+        data = pickle.load(fin)
     return data
 
 
 def load_checkpoint(path, target):
-    checkpoint_data = load_pickle(path)
-    train_state = flax.serialization.from_bytes(target, checkpoint_data['train_state'])
-    return train_state, checkpoint_data['metadata']
+    flattend_train_state = {}
+    with open_file(path) as fin:
+        unpacker = msgpack.Unpacker(fin, max_buffer_size=0)
+        for key, value in unpacker:
+            flattend_train_state[tuple(key)] = from_bytes(None, value)
+
+    return flax.traverse_util.unflatten_dict(flattend_train_state)
 
 
 def function_args_to_config(fn, none_arg_types=None, exclude_args=None, override_args=None):

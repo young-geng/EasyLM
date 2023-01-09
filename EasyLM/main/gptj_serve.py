@@ -54,6 +54,7 @@ FLAGS_DEF = define_flags_with_default(
     num_beams=1,
     load_hf_pretrained='',
     load_checkpoint='',
+    load_metadata='',
     tokenizer=GPTJConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
@@ -73,10 +74,11 @@ def main(argv):
             gptj_config = GPTJConfig.from_pretrained(FLAGS.load_hf_pretrained)
             params = gptj_config.load_pretrained(FLAGS.load_hf_pretrained)
         elif FLAGS.load_checkpoint != '':
-            checkpoint, metadata = load_checkpoint(FLAGS.load_checkpoint, target=None)
+            params = flax.core.frozen_dict.freeze(
+                load_checkpoint(FLAGS.load_checkpoint, target=None)['params']
+            )
+            metadata = load_pickle(FLAGS.load_metadata)
             gptj_config = metadata['gptj_config']
-            params = flax.core.frozen_dict.freeze(checkpoint['params'])
-            del checkpoint
         else:
             raise ValueError('Params must be loaded from checkpoint or huggingface!')
 
@@ -86,6 +88,7 @@ def main(argv):
             seed=FLAGS.seed,
             _do_init=False
         )
+        params = jax.device_put(params, device=jax.devices("cpu")[0])
 
         if FLAGS.dtype == 'fp32':
             params = hf_model.to_fp32(params)

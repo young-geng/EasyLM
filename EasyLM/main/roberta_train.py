@@ -200,21 +200,19 @@ def main(argv):
     def save_checkpoint(train_state):
         train_state = sharding_helper.get(train_state)
         step = int(train_state.step)
-        train_state = flax.serialization.to_bytes(train_state)
         metadata = dict(
             step=step,
             variant=variant,
             flags=flags_config_dict,
             roberta_config=roberta_config,
         )
-        checkpoint = dict(train_state=train_state, metadata=metadata)
         logger.save_pickle(metadata, 'metadata.pkl')
-        logger.save_pickle(checkpoint, 'checkpoint.pkl')
         logger.save_pickle(dataset, 'dataset.pkl')
+        logger.save_checkpoint(train_state, 'train_state')
 
     if FLAGS.load_checkpoint != '':
         with jax.default_device(jax.devices("cpu")[0]):
-            restored_checkpoint_state, _ = load_checkpoint(
+            restored_checkpoint_state = load_checkpoint(
                 FLAGS.load_checkpoint, train_state_shapes
             )
             start_step = restored_checkpoint_state.step
