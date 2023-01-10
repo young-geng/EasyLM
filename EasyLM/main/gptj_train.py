@@ -46,6 +46,7 @@ FLAGS_DEF = define_flags_with_default(
     clip_gradient=1.0,
     weight_decay=1e-4,
     bf16_momentum=False,
+    load_gptj_config='',
     load_hf_pretrained='',
     load_checkpoint='',
     load_dataset_state='',
@@ -81,7 +82,12 @@ def main(argv):
         dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
 
     seq_length = dataset.seq_length
-    gptj_config = GPTJConfig(**FLAGS.gptj)
+
+    if FLAGS.load_gptj_config:
+        gptj_config = load_pickle(FLAGS.load_gptj_config)['gptj_config']
+    else:
+        gptj_config = GPTJConfig(**FLAGS.gptj)
+
     gptj_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,

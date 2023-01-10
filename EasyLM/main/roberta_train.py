@@ -49,6 +49,7 @@ FLAGS_DEF = define_flags_with_default(
     clip_gradient=1.0,
     weight_decay=1e-4,
     bf16_momentum=False,
+    load_roberta_config='',
     load_hf_pretrained='',
     load_checkpoint='',
     load_dataset_state='',
@@ -84,7 +85,12 @@ def main(argv):
         dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
 
     seq_length = dataset.seq_length
-    roberta_config = RobertaConfig(**FLAGS.roberta)
+
+    if FLAGS.load_roberta_config != '':
+        roberta_config = load_pickle(FLAGS.load_roberta_config)['roberta_config']
+    else:
+        roberta_config = RobertaConfig(**FLAGS.roberta)
+
     roberta_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
