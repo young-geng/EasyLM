@@ -53,7 +53,7 @@ from transformers import AutoTokenizer
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from ..utils import function_args_to_config
+from ..utils import function_args_to_config, load_pickle
 
 
 logger = logging.get_logger(__name__)
@@ -300,6 +300,16 @@ class RobertaConfig(PretrainedConfig):
             params = FlaxRobertaForMaskedLM.from_pretrained(name, _do_init=False)[1]
             params = freeze({'params': params})
         return params
+
+    @classmethod
+    def load_config(cls, path):
+        load_type, load_path = path.split('::', 1)
+        if load_type == 'file':
+            return load_pickle(load_path)['gptj_config']
+        elif load_type == 'huggingface':
+            return cls.from_pretrained(load_path)
+        else:
+            raise ValueError(f'Unsupported load config type: {load_type}')
 
 
 def create_position_ids_from_input_ids(input_ids, padding_idx):

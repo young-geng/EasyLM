@@ -64,7 +64,8 @@ from Huggingface transformers:
 
 ```shell
 python -m EasyLM.main.gptj_serve \
-    --load_hf_pretrained='EleutherAI/gpt-j-6B' \
+    --load_gptj_config='huggingface::EleutherAI/gpt-j-6B' \
+    --load_checkpoint='huggingface::EleutherAI/gpt-j-6B' \
     --dtype='bf16' \
     --input_length=512 \
     --seq_length=2048 \

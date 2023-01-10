@@ -50,7 +50,6 @@ FLAGS_DEF = define_flags_with_default(
     weight_decay=1e-4,
     bf16_momentum=False,
     load_roberta_config='',
-    load_hf_pretrained='',
     load_checkpoint='',
     load_dataset_state='',
     log_freq=50,
@@ -87,7 +86,7 @@ def main(argv):
     seq_length = dataset.seq_length
 
     if FLAGS.load_roberta_config != '':
-        roberta_config = load_pickle(FLAGS.load_roberta_config)['roberta_config']
+        roberta_config = RobertaConfig.load_config(FLAGS.load_roberta_config)
     else:
         roberta_config = RobertaConfig(**FLAGS.roberta)
 
@@ -216,31 +215,33 @@ def main(argv):
         logger.save_pickle(dataset, 'dataset.pkl')
         logger.save_checkpoint(train_state, 'train_state')
 
+    start_step = 0
     if FLAGS.load_checkpoint != '':
-        with jax.default_device(jax.devices("cpu")[0]):
-            restored_checkpoint_state = load_checkpoint(
-                FLAGS.load_checkpoint, train_state_shapes
-            )
-            start_step = restored_checkpoint_state.step
-    else:
-        start_step = 0
-        if FLAGS.load_hf_pretrained != '':
-            hf_pretrained_params = roberta_config.load_pretrained(
-                FLAGS.load_hf_pretrained
-            )
+        load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
+        if load_type == 'file':
+            with jax.default_device(jax.devices("cpu")[0]):
+                restored_checkpoint_state = load_checkpoint(
+                    load_path, train_state_shapes
+                )
+                start_step = restored_checkpoint_state.step
+        elif load_type == 'huggingface':
+            restored_params = roberta_config.load_pretrained(load_path)
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
         if FLAGS.load_checkpoint != '':
-            train_state = sharding_helper.put(restored_checkpoint_state)
-            del restored_checkpoint_state
+            load_type, _ = FLAGS.load_checkpoint.split('::', 1)
+            if load_type == 'file':
+                train_state = sharding_helper.put(restored_checkpoint_state)
+                del restored_checkpoint_state
+            elif load_type == 'huggingface':
+                train_state = sharded_init_fn(next_rng())
+                train_state = sharding_helper.get(train_state)
+                train_state = train_state.replace(params=restored_params)
+                train_state = sharding_helper.put(train_state)
+                del restored_params
         else:
             train_state = sharded_init_fn(next_rng())
-            if FLAGS.load_hf_pretrained != '':
-                train_state = sharding_helper.get(train_state)
-                train_state = train_state.replace(params=hf_pretrained_params)
-                del hf_pretrained_params
-                train_state = sharding_helper.put(train_state)
 
         if FLAGS.save_model_freq > 0:
             save_checkpoint(train_state)

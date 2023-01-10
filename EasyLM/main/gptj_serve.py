@@ -52,9 +52,8 @@ FLAGS_DEF = define_flags_with_default(
     top_p=1.0,
     do_sample=False,
     num_beams=1,
-    load_hf_pretrained='',
+    load_gptj_config='',
     load_checkpoint='',
-    load_metadata='',
     tokenizer=GPTJConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
@@ -70,17 +69,16 @@ def main(argv):
     tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
 
     with jax.default_device(jax.devices("cpu")[0]):
-        if FLAGS.load_hf_pretrained != '':
-            gptj_config = GPTJConfig.from_pretrained(FLAGS.load_hf_pretrained)
-            params = gptj_config.load_pretrained(FLAGS.load_hf_pretrained)
-        elif FLAGS.load_checkpoint != '':
+        gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
+        load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
+        if load_type == 'file':
             params = flax.core.frozen_dict.freeze(
-                load_checkpoint(FLAGS.load_checkpoint, target=None)['params']
+                load_checkpoint(load_path, target=None)['params']
             )
-            metadata = load_pickle(FLAGS.load_metadata)
-            gptj_config = metadata['gptj_config']
+        elif load_type == 'huggingface':
+            params = gptj_config.load_pretrained(load_path)
         else:
-            raise ValueError('Params must be loaded from checkpoint or huggingface!')
+            raise ValueError(f'Unsupported load checkpoint type {load_type}')
 
         hf_model = FlaxGPTJForCausalLM(
             gptj_config,
