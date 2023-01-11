@@ -200,14 +200,14 @@ def main(argv):
     start_step = 0
     if FLAGS.load_checkpoint != '':
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
-        if load_type == 'file':
-            with jax.default_device(jax.devices("cpu")[0]):
+        with jax.default_device(jax.devices("cpu")[0]):
+            if load_type == 'file':
                 restored_checkpoint_state = load_checkpoint(
                     load_path, train_state_shapes
                 )
                 start_step = restored_checkpoint_state.step
-        elif load_type == 'huggingface':
-            restored_params = gptj_config.load_pretrained(load_path)
+            elif load_type == 'huggingface':
+                restored_params = gptj_config.load_pretrained(load_path)
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
