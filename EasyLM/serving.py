@@ -25,7 +25,7 @@ class LMServer(object):
         config.port = 5007
         config.batch_size = 1
         config.logging = False
-        config.pre_compile = ''
+        config.pre_compile = 'loglikelihood'
         config.default_temperature = 1.0
         config.default_max_length = 5000
 
@@ -225,8 +225,13 @@ class LMServer(object):
 
     def run(self):
         if self.config.pre_compile != '':
+            if self.config.pre_compile == 'all':
+                pre_compile = ['loglikelihood', 'generate', 'greedy_until']
+            else:
+                pre_compile = self.config.pre_compile.split(',')
+
             pre_compile_data = ['a' for _ in range(self.config.batch_size)]
-            for task in self.config.pre_compile.split('-'):
+            for task in pre_compile:
                 if task == 'loglikelihood':
                     self.loglikelihood(pre_compile_data, pre_compile_data)
                     self.loglikelihood_rolling(pre_compile_data)
