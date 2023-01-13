@@ -4,6 +4,7 @@ from functools import partial
 import os
 import json
 import urllib
+import time
 
 import requests
 from tqdm import tqdm, trange
@@ -29,6 +30,7 @@ FLAGS_DEF = define_flags_with_default(
     lm_server_url='http://localhost:5007/',
     tasks='wsc,piqa,winogrande,openbookqa,logiqa',
     shots=0,
+    wait_for_ready=True,
     logger=WandBLogger.get_default_config(),
 )
 FLAGS = absl.flags.FLAGS
@@ -38,6 +40,14 @@ class LMEvalHarnessInterface(LM):
 
     def __init__(self, url):
         self.url = url
+
+    def wait_for_ready(self):
+        while True:
+            try:
+                requests.get(self.url)
+                return
+            except requests.Timeout as e:
+                time.sleep(10)
 
     def greedy_until(self, inputs):
         prefix, until = zip(*inputs)
@@ -73,6 +83,8 @@ def main(argv):
         config=FLAGS.logger, variant=get_user_flags(FLAGS, FLAGS_DEF)
     )
     model = LMEvalHarnessInterface(FLAGS.lm_server_url)
+    if FLAGS.wait_for_ready:
+        model.wait_for_ready()
     task_list = FLAGS.tasks.split(',')
     results = evaluator.evaluate(
         model, tasks.get_task_dict(task_list), False, FLAGS.shots, None

@@ -41,6 +41,7 @@ class LMServer(object):
         self.app.post('/loglikelihood-rolling')(self.serve_loglikelihood_rolling)
         self.app.post('/generate')(self.serve_generate)
         self.app.post('/greedy-until')(self.serve_greedy_until)
+        self.app.route('/ready')(self.serve_ready)
 
     @staticmethod
     def loglikelihood(prefix_text, text):
@@ -222,6 +223,9 @@ class LMServer(object):
                     + pprint.pformat(output) + '\n'
                 )
         return output
+
+    def serve_ready(self):
+        return 'Ready!\n'
 
     def run(self):
         if self.config.pre_compile != '':
