@@ -35,7 +35,7 @@ from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_flax_outputs import FlaxBaseModelOutput, FlaxCausalLMOutput
 from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append_call_sample_docstring
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
-from transformers.generation_flax_logits_process import FlaxLogitsProcessorList
+from transformers.generation.flax_logits_process import FlaxLogitsProcessorList
 from transformers import AutoTokenizer
 from jax.experimental.pjit import with_sharding_constraint
 from jax.experimental import PartitionSpec
@@ -52,7 +52,6 @@ logger = logging.get_logger(__name__)
 
 _CHECKPOINT_FOR_DOC = "gptj"
 _CONFIG_FOR_DOC = "GPTJConfig"
-_TOKENIZER_FOR_DOC = "GPTJTokenizer"
 
 
 GPTJ_START_DOCSTRING = r"""
@@ -289,7 +288,7 @@ class GPTJConfig(PretrainedConfig):
         return config
 
     @classmethod
-    def get_tokenizer(cls, config):
+    def get_tokenizer(cls, config, padding_side='left'):
         config = cls.get_tokenizer_config(config)
         return AutoTokenizer.from_pretrained(
             config.name,
@@ -298,7 +297,7 @@ class GPTJConfig(PretrainedConfig):
             pad_token=config.pad_token,
             cls_token=config.cls_token,
             mask_token=config.mask_token,
-            padding_side='left',
+            padding_side=padding_side,
         )
 
     @staticmethod
@@ -479,7 +478,10 @@ class FlaxGPTJAttention(nn.Module):
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
 
         attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-        attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
+        if self.causal:
+            attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
+        else:
+            attention_mask = attention_mask
 
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
@@ -986,7 +988,6 @@ class FlaxGPTJForCausalLM(FlaxGPTJPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxGPTJForCausalLM,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxCausalLMOutput,
     _CONFIG_FOR_DOC,
