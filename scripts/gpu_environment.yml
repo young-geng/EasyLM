@@ -26,7 +26,7 @@ dependencies:
         - optax==0.1.3
         - distrax==0.1.2
         - orbax==0.0.23
-        - transformers==4.24.0
+        - transformers==4.26.0
         - datasets==2.7.0
         - einops
         - tensorflow==2.11.0
