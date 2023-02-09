@@ -114,8 +114,28 @@ def next_rng(*args, **kwargs):
     return jax_utils_rng(*args, **kwargs)
 
 
-def mse_loss(val, target):
-    return jnp.mean(jnp.square(val - target))
+def get_metrics(metrics, unreplicate=False, stack=False):
+    if unreplicate:
+        metrics = flax.jax_utils.unreplicate(metrics)
+    metrics = jax.device_get(metrics)
+    if stack:
+        return jax.tree_map(lambda *args: np.stack(args), *metrics)
+    else:
+        return {key: float(val) for key, val in metrics.items()}
+
+
+def mse_loss(val, target, valid=None):
+    if valid is None:
+        valid = jnp.ones((*target.shape[:2], 1))
+    valid = valid.astype(jnp.float32)
+    loss = jnp.mean(
+        jnp.where(
+            valid > 0.0,
+            jnp.square(val - target),
+            0.0
+        )
+    )
+    return loss
 
 
 def cross_entropy_loss(logits, labels, smoothing_factor=0.):
