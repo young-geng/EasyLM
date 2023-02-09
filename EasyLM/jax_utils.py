@@ -55,8 +55,6 @@ class ShardingHelper(object):
     def __init__(self, partition_specs):
         self.partition_specs = partition_specs
         def gather_tensor(partition_spec):
-            if partition_spec is None:
-                import pdb; pdb.set_trace()
             return pjit(
                 lambda x: x,
                 in_axis_resources=partition_spec,
