@@ -53,16 +53,14 @@ from transformers import AutoTokenizer
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from ..utils import function_args_to_config, load_pickle
+from ...utils import function_args_to_config, load_pickle
 
 
-logger = logging.get_logger(__name__)
-
-_CHECKPOINT_FOR_DOC = "roberta-base"
-_CONFIG_FOR_DOC = "RobertaConfig"
-_TOKENIZER_FOR_DOC = "RobertaTokenizer"
-
-remat = nn_partitioning.remat
+"""
+The follow code is taken from
+transformers/src/transformers/models/roberta/configuration_roberta.py
+and modified to work with EasyLM.
+"""
 
 
 ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP = {
@@ -73,66 +71,6 @@ ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP = {
     "roberta-base-openai-detector": "https://huggingface.co/roberta-base-openai-detector/resolve/main/config.json",
     "roberta-large-openai-detector": "https://huggingface.co/roberta-large-openai-detector/resolve/main/config.json",
 }
-
-
-ROBERTA_START_DOCSTRING = r"""
-
-    This model inherits from [`FlaxPreTrainedModel`]. Check the superclass documentation for the generic methods the
-    library implements for all its model (such as downloading, saving and converting weights from PyTorch models)
-
-    This model is also a Flax Linen [flax.linen.Module](https://flax.readthedocs.io/en/latest/flax.linen.html#module)
-    subclass. Use it as a regular Flax linen Module and refer to the Flax documentation for all matter related to
-    general usage and behavior.
-
-    Finally, this model supports inherent JAX features such as:
-
-    - [Just-In-Time (JIT) compilation](https://jax.readthedocs.io/en/latest/jax.html#just-in-time-compilation-jit)
-    - [Automatic Differentiation](https://jax.readthedocs.io/en/latest/jax.html#automatic-differentiation)
-    - [Vectorization](https://jax.readthedocs.io/en/latest/jax.html#vectorization-vmap)
-    - [Parallelization](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap)
-
-    Parameters:
-        config ([`RobertaConfig`]): Model configuration class with all the parameters of the
-            model. Initializing with a config file does not load the weights associated with the model, only the
-            configuration. Check out the [`~FlaxPreTrainedModel.from_pretrained`] method to load the model weights.
-"""
-
-ROBERTA_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`numpy.ndarray` of shape `({0})`):
-            Indices of input sequence tokens in the vocabulary.
-
-            Indices can be obtained using [`BertTokenizer`]. See [`PreTrainedTokenizer.encode`] and
-            [`PreTrainedTokenizer.__call__`] for details.
-
-            [What are input IDs?](../glossary#input-ids)
-        attention_mask (`numpy.ndarray` of shape `({0})`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
-
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-
-            [What are attention masks?](../glossary#attention-mask)
-        token_type_ids (`numpy.ndarray` of shape `({0})`, *optional*):
-            Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,
-            1]`:
-
-            - 0 corresponds to a *sentence A* token,
-            - 1 corresponds to a *sentence B* token.
-
-            [What are token type IDs?](../glossary#token-type-ids)
-        position_ids (`numpy.ndarray` of shape `({0})`, *optional*):
-            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
-            config.max_position_embeddings - 1]`.
-        head_mask (`numpy.ndarray` of shape `({0})`, `optional):
-            Mask to nullify selected heads of the attention modules. Mask values selected in `[0, 1]`:
-
-            - 1 indicates the head is **not masked**,
-            - 0 indicates the head is **masked**.
-
-        return_dict (`bool`, *optional*):
-            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
-"""
 
 
 class RobertaConfig(PretrainedConfig):
@@ -312,15 +250,28 @@ class RobertaConfig(PretrainedConfig):
             raise ValueError(f'Unsupported load config type: {load_type}')
 
 
+"""
+The follow code is taken from
+transformers/src/transformers/models/roberta/modeling_flax_roberta.py
+and modified to work with EasyLM.
+"""
+
+
+logger = logging.get_logger(__name__)
+
+_CHECKPOINT_FOR_DOC = "roberta-base"
+_CONFIG_FOR_DOC = "RobertaConfig"
+
+remat = nn_partitioning.remat
+
+
 def create_position_ids_from_input_ids(input_ids, padding_idx):
     """
     Replace non-padding symbols with their position numbers. Position numbers begin at padding_idx+1. Padding symbols
     are ignored. This is modified from fairseq's `utils.make_positions`.
-
     Args:
         input_ids: jnp.ndarray
         padding_idx: int
-
     Returns: jnp.ndarray
     """
     # The series of casts and type-conversions here are carefully balanced to both work with ONNX export and XLA.
@@ -334,6 +285,53 @@ def create_position_ids_from_input_ids(input_ids, padding_idx):
         incremental_indices = jnp.cumsum(mask, axis=1).astype("i4") * mask
 
     return incremental_indices.astype("i4") + padding_idx
+
+
+ROBERTA_START_DOCSTRING = r"""
+    This model inherits from [`FlaxPreTrainedModel`]. Check the superclass documentation for the generic methods the
+    library implements for all its model (such as downloading, saving and converting weights from PyTorch models)
+    This model is also a Flax Linen [flax.linen.Module](https://flax.readthedocs.io/en/latest/flax.linen.html#module)
+    subclass. Use it as a regular Flax linen Module and refer to the Flax documentation for all matter related to
+    general usage and behavior.
+    Finally, this model supports inherent JAX features such as:
+    - [Just-In-Time (JIT) compilation](https://jax.readthedocs.io/en/latest/jax.html#just-in-time-compilation-jit)
+    - [Automatic Differentiation](https://jax.readthedocs.io/en/latest/jax.html#automatic-differentiation)
+    - [Vectorization](https://jax.readthedocs.io/en/latest/jax.html#vectorization-vmap)
+    - [Parallelization](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap)
+    Parameters:
+        config ([`RobertaConfig`]): Model configuration class with all the parameters of the
+            model. Initializing with a config file does not load the weights associated with the model, only the
+            configuration. Check out the [`~FlaxPreTrainedModel.from_pretrained`] method to load the model weights.
+"""
+
+ROBERTA_INPUTS_DOCSTRING = r"""
+    Args:
+        input_ids (`numpy.ndarray` of shape `({0})`):
+            Indices of input sequence tokens in the vocabulary.
+            Indices can be obtained using [`AutoTokenizer`]. See [`PreTrainedTokenizer.encode`] and
+            [`PreTrainedTokenizer.__call__`] for details.
+            [What are input IDs?](../glossary#input-ids)
+        attention_mask (`numpy.ndarray` of shape `({0})`, *optional*):
+            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
+            - 1 for tokens that are **not masked**,
+            - 0 for tokens that are **masked**.
+            [What are attention masks?](../glossary#attention-mask)
+        token_type_ids (`numpy.ndarray` of shape `({0})`, *optional*):
+            Segment token indices to indicate first and second portions of the inputs. Indices are selected in `[0,
+            1]`:
+            - 0 corresponds to a *sentence A* token,
+            - 1 corresponds to a *sentence B* token.
+            [What are token type IDs?](../glossary#token-type-ids)
+        position_ids (`numpy.ndarray` of shape `({0})`, *optional*):
+            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
+            config.max_position_embeddings - 1]`.
+        head_mask (`numpy.ndarray` of shape `({0})`, `optional):
+            Mask to nullify selected heads of the attention modules. Mask values selected in `[0, 1]`:
+            - 1 indicates the head is **not masked**,
+            - 0 indicates the head is **masked**.
+        return_dict (`bool`, *optional*):
+            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
+"""
 
 
 # Copied from transformers.models.bert.modeling_flax_bert.FlaxBertEmbeddings with Bert->Roberta
@@ -520,7 +518,7 @@ class FlaxRobertaSelfAttention(nn.Module):
             attention_bias = lax.select(
                 attention_mask > 0,
                 jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
-                jnp.full(attention_mask.shape, -1e10).astype(self.dtype),
+                jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
             )
         else:
             attention_bias = None
@@ -941,7 +939,7 @@ class FlaxRobertaPreTrainedModel(FlaxPreTrainedModel):
         dtype: jnp.dtype = jnp.float32,
         _do_init: bool = True,
         gradient_checkpointing: bool = False,
-        **kwargs
+        **kwargs,
     ):
         module = self.module_class(config=config, dtype=dtype, gradient_checkpointing=gradient_checkpointing, **kwargs)
         super().__init__(config, module, input_shape=input_shape, seed=seed, dtype=dtype, _do_init=_do_init)
@@ -1194,9 +1192,7 @@ class FlaxRobertaModel(FlaxRobertaPreTrainedModel):
     module_class = FlaxRobertaModule
 
 
-append_call_sample_docstring(
-    FlaxRobertaModel, _TOKENIZER_FOR_DOC, _CHECKPOINT_FOR_DOC, FlaxBaseModelOutputWithPooling, _CONFIG_FOR_DOC
-)
+append_call_sample_docstring(FlaxRobertaModel, _CHECKPOINT_FOR_DOC, FlaxBaseModelOutputWithPooling, _CONFIG_FOR_DOC)
 
 
 class FlaxRobertaForMaskedLMModule(nn.Module):
@@ -1264,7 +1260,6 @@ class FlaxRobertaForMaskedLM(FlaxRobertaPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxRobertaForMaskedLM,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxBaseModelOutputWithPooling,
     _CONFIG_FOR_DOC,
@@ -1337,7 +1332,6 @@ class FlaxRobertaForSequenceClassification(FlaxRobertaPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxRobertaForSequenceClassification,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxSequenceClassifierOutput,
     _CONFIG_FOR_DOC,
@@ -1422,7 +1416,6 @@ overwrite_call_docstring(
 )
 append_call_sample_docstring(
     FlaxRobertaForMultipleChoice,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxMultipleChoiceModelOutput,
     _CONFIG_FOR_DOC,
@@ -1502,7 +1495,6 @@ class FlaxRobertaForTokenClassification(FlaxRobertaPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxRobertaForTokenClassification,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxTokenClassifierOutput,
     _CONFIG_FOR_DOC,
@@ -1580,7 +1572,6 @@ class FlaxRobertaForQuestionAnswering(FlaxRobertaPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxRobertaForQuestionAnswering,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxQuestionAnsweringModelOutput,
     _CONFIG_FOR_DOC,
@@ -1691,7 +1682,6 @@ class FlaxRobertaForCausalLM(FlaxRobertaPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxRobertaForCausalLM,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxCausalLMOutputWithCrossAttentions,
     _CONFIG_FOR_DOC,

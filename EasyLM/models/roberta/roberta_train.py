@@ -20,17 +20,17 @@ from flax.training.train_state import TrainState
 import optax
 
 
-from ..data import PretrainDataset
-from ..jax_utils import (
+from ...data import PretrainDataset
+from ...jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     optax_add_scheduled_weight_decay, flatten_tree
 )
-from ..utils import (
+from ...utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
     load_pickle, load_checkpoint, user_flags_to_config_dict
 )
-from ..models.roberta import (
+from .roberta import (
     RobertaConfig, FlaxRobertaForMaskedLMModule, FlaxRobertaForMaskedLM
 )
 

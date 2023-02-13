@@ -39,7 +39,7 @@ from jax.interpreters import pxla
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from ..utils import function_args_to_config, load_pickle
+from ...utils import function_args_to_config, load_pickle
 
 
 remat = nn_partitioning.remat

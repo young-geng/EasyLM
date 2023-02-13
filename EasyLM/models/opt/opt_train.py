@@ -20,17 +20,17 @@ from flax.training.train_state import TrainState
 import optax
 
 
-from ..data import PretrainDataset
-from ..jax_utils import (
+from ...data import PretrainDataset
+from ...jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     optax_add_scheduled_weight_decay
 )
-from ..utils import (
+from ...utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
     load_pickle, load_checkpoint, user_flags_to_config_dict
 )
-from ..models.gptj import GPTJConfig, FlaxGPTJForCausalLMModule
+from .opt import OPTConfig, FlaxOPTForCausalLMModule
 
 
 FLAGS_DEF = define_flags_with_default(
@@ -46,14 +46,14 @@ FLAGS_DEF = define_flags_with_default(
     clip_gradient=1.0,
     weight_decay=1e-4,
     bf16_momentum=False,
-    load_gptj_config='',
+    load_opt_config='',
     load_checkpoint='',
     load_dataset_state='',
     log_freq=50,
     save_model_freq=0,
-    tokenizer=GPTJConfig.get_tokenizer_config(),
+    tokenizer=OPTConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
-    gptj=GPTJConfig.get_default_config(),
+    opt=OPTConfig.get_default_config(),
     logger=WandBLogger.get_default_config(),
     log_all_worker=False,
 )
@@ -77,26 +77,26 @@ def main(argv):
     if FLAGS.load_dataset_state != '':
         dataset = load_pickle(FLAGS.load_dataset_state)
     else:
-        tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
+        tokenizer = OPTConfig.get_tokenizer(FLAGS.tokenizer)
         dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
 
     seq_length = dataset.seq_length
 
-    if FLAGS.load_gptj_config != '':
-        gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
+    if FLAGS.load_opt_config != '':
+        opt_config = OPTConfig.load_config(FLAGS.load_opt_config)
     else:
-        gptj_config = GPTJConfig(**FLAGS.gptj)
+        opt_config = OPTConfig(**FLAGS.opt)
 
-    gptj_config.update(dict(
+    opt_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
         vocab_size=dataset.vocab_size,
     ))
-    model = FlaxGPTJForCausalLMModule(gptj_config)
+    model = FlaxOPTForCausalLMModule(opt_config)
 
     def weight_decay_mask(params):
         def decay(name, _):
-            for rule in GPTJConfig.get_weight_decay_exclusions():
+            for rule in OPTConfig.get_weight_decay_exclusions():
                 if re.search(rule, name) is not None:
                     return False
             return True
@@ -135,7 +135,7 @@ def main(argv):
             input_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             position_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             attention_mask=jnp.ones((4, seq_length), dtype=jnp.int32),
-            rngs=rng_generator(gptj_config.rng_keys()),
+            rngs=rng_generator(opt_config.rng_keys()),
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
@@ -144,12 +144,12 @@ def main(argv):
         tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
         def loss_and_accuracy(params):
             bos_tokens = jnp.full(
-                (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
+                (tokens.shape[0], 1), opt_config.bos_token_id, dtype=jnp.int32
             )
             inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
             logits = model.apply(
                 params, inputs, deterministic=False,
-                rngs=rng_generator(gptj_config.rng_keys()),
+                rngs=rng_generator(opt_config.rng_keys()),
             ).logits
             return cross_entropy_loss_and_accuracy(logits, tokens)
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
@@ -166,7 +166,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        GPTJConfig.get_partition_rules(), train_state_shapes
+        OPTConfig.get_partition_rules(), train_state_shapes
     )
 
     sharding_helper = ShardingHelper(train_state_partition)
@@ -191,7 +191,7 @@ def main(argv):
             step=step,
             variant=variant,
             flags=flags_config_dict,
-            gptj_config=gptj_config,
+            opt_config=opt_config,
         )
         logger.save_pickle(metadata, 'metadata.pkl')
         logger.save_pickle(dataset, 'dataset.pkl')
@@ -205,9 +205,9 @@ def main(argv):
                 restored_checkpoint_state = load_checkpoint(
                     load_path, train_state_shapes
                 )
-                start_step = restored_checkpoint_state.step
+                start_step = restored_checkpoint_state['step']
             elif load_type == 'huggingface':
-                restored_params = gptj_config.load_pretrained(load_path)
+                restored_params = opt_config.load_pretrained(load_path)
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:

@@ -43,70 +43,13 @@ from jax.interpreters import pxla
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from ..utils import function_args_to_config, load_pickle
+from ...utils import function_args_to_config, load_pickle
 
 
-remat = nn_partitioning.remat
-
-logger = logging.get_logger(__name__)
-
-_CHECKPOINT_FOR_DOC = "gptj"
-_CONFIG_FOR_DOC = "GPTJConfig"
-
-
-GPTJ_START_DOCSTRING = r"""
-    This model inherits from [`FlaxPreTrainedModel`]. Check the superclass documentation for the generic methods the
-    library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
-    etc.)
-    This model is also a Flax Linen
-    [flax.nn.Module](https://flax.readthedocs.io/en/latest/_autosummary/flax.nn.module.html) subclass. Use it as a
-    regular Flax Module and refer to the Flax documentation for all matter related to general usage and behavior.
-    Finally, this model supports inherent JAX features such as:
-    - [Just-In-Time (JIT) compilation](https://jax.readthedocs.io/en/latest/jax.html#just-in-time-compilation-jit)
-    - [Automatic Differentiation](https://jax.readthedocs.io/en/latest/jax.html#automatic-differentiation)
-    - [Vectorization](https://jax.readthedocs.io/en/latest/jax.html#vectorization-vmap)
-    - [Parallelization](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap)
-    Parameters:
-        config ([`GPTJConfig`]): Model configuration class with all the parameters of the model.
-            Initializing with a config file does not load the weights associated with the model, only the
-            configuration. Check out the [`~FlaxPreTrainedModel.from_pretrained`] method to load the model weights.
-        dtype (`jax.numpy.dtype`, *optional*, defaults to `jax.numpy.float32`):
-            The data type of the computation. Can be one of `jax.numpy.float32`, `jax.numpy.float16` (on GPUs) and
-            `jax.numpy.bfloat16` (on TPUs).
-            This can be used to enable mixed-precision training or half-precision inference on GPUs or TPUs. If
-            specified all the computation will be performed with the given `dtype`.
-            **Note that this only specifies the dtype of the computation and does not influence the dtype of model
-            parameters.**
-            If you wish to change the dtype of the model parameters, see [`~FlaxPreTrainedModel.to_fp16`] and
-            [`~FlaxPreTrainedModel.to_bf16`].
 """
-
-GPTJ_INPUTS_DOCSTRING = r"""
-    Args:
-        input_ids (`numpy.ndarray` of shape `(batch_size, input_ids_length)`):
-            `input_ids_length` = `sequence_length`. Indices of input sequence tokens in the vocabulary.
-            Indices can be obtained using [`GPTJTokenizer`]. See [`PreTrainedTokenizer.encode`] and
-            [`PreTrainedTokenizer.__call__`] for details.
-            [What are input IDs?](../glossary#input-ids)
-        attention_mask (`numpy.ndarray` of shape `(batch_size, sequence_length)`, *optional*):
-            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-            [What are attention masks?](../glossary#attention-mask)
-        position_ids (`numpy.ndarray` of shape `(batch_size, sequence_length)`, *optional*):
-            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
-            config.max_position_embeddings - 1]`.
-        past_key_values (`Dict[str, np.ndarray]`, *optional*, returned by `init_cache` or when passing previous `past_key_values`):
-            Dictionary of pre-computed hidden-states (key and values in the attention blocks) that can be used for fast
-            auto-regressive decoding. Pre-computed key and value hidden-states are of shape *[batch_size, max_length]*.
-        output_attentions (`bool`, *optional*):
-            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
-            tensors for more detail.
-        output_hidden_states (`bool`, *optional*):
-            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
-            more detail.
-        return_dict (`bool`, *optional*):
-            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
+The follow code is taken from
+transformers/src/transformers/models/gptj/configuration_gptj.py
+and modified to work with EasyLM.
 """
 
 
@@ -316,6 +259,77 @@ class GPTJConfig(PretrainedConfig):
             return cls.from_pretrained(load_path)
         else:
             raise ValueError(f'Unsupported load config type: {load_type}')
+
+
+"""
+The follow code is taken from
+transformers/src/transformers/models/gptj/modeling_flax_gptj.py
+and modified to work with EasyLM.
+"""
+
+logger = logging.get_logger(__name__)
+
+_CHECKPOINT_FOR_DOC = "gptj"
+_CONFIG_FOR_DOC = "GPTJConfig"
+
+remat = nn_partitioning.remat
+
+
+GPTJ_START_DOCSTRING = r"""
+    This model inherits from [`FlaxPreTrainedModel`]. Check the superclass documentation for the generic methods the
+    library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
+    etc.)
+    This model is also a Flax Linen
+    [flax.nn.Module](https://flax.readthedocs.io/en/latest/_autosummary/flax.nn.module.html) subclass. Use it as a
+    regular Flax Module and refer to the Flax documentation for all matter related to general usage and behavior.
+    Finally, this model supports inherent JAX features such as:
+    - [Just-In-Time (JIT) compilation](https://jax.readthedocs.io/en/latest/jax.html#just-in-time-compilation-jit)
+    - [Automatic Differentiation](https://jax.readthedocs.io/en/latest/jax.html#automatic-differentiation)
+    - [Vectorization](https://jax.readthedocs.io/en/latest/jax.html#vectorization-vmap)
+    - [Parallelization](https://jax.readthedocs.io/en/latest/jax.html#parallelization-pmap)
+    Parameters:
+        config ([`GPTJConfig`]): Model configuration class with all the parameters of the model.
+            Initializing with a config file does not load the weights associated with the model, only the
+            configuration. Check out the [`~FlaxPreTrainedModel.from_pretrained`] method to load the model weights.
+        dtype (`jax.numpy.dtype`, *optional*, defaults to `jax.numpy.float32`):
+            The data type of the computation. Can be one of `jax.numpy.float32`, `jax.numpy.float16` (on GPUs) and
+            `jax.numpy.bfloat16` (on TPUs).
+            This can be used to enable mixed-precision training or half-precision inference on GPUs or TPUs. If
+            specified all the computation will be performed with the given `dtype`.
+            **Note that this only specifies the dtype of the computation and does not influence the dtype of model
+            parameters.**
+            If you wish to change the dtype of the model parameters, see [`~FlaxPreTrainedModel.to_fp16`] and
+            [`~FlaxPreTrainedModel.to_bf16`].
+"""
+
+GPTJ_INPUTS_DOCSTRING = r"""
+    Args:
+        input_ids (`numpy.ndarray` of shape `(batch_size, input_ids_length)`):
+            `input_ids_length` = `sequence_length`. Indices of input sequence tokens in the vocabulary.
+            Indices can be obtained using [`AutoTokenizer`]. See [`PreTrainedTokenizer.encode`] and
+            [`PreTrainedTokenizer.__call__`] for details.
+            [What are input IDs?](../glossary#input-ids)
+        attention_mask (`numpy.ndarray` of shape `(batch_size, sequence_length)`, *optional*):
+            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
+            - 1 for tokens that are **not masked**,
+            - 0 for tokens that are **masked**.
+            [What are attention masks?](../glossary#attention-mask)
+        position_ids (`numpy.ndarray` of shape `(batch_size, sequence_length)`, *optional*):
+            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
+            config.max_position_embeddings - 1]`.
+        past_key_values (`Dict[str, np.ndarray]`, *optional*, returned by `init_cache` or when passing previous `past_key_values`):
+            Dictionary of pre-computed hidden-states (key and values in the attention blocks) that can be used for fast
+            auto-regressive decoding. Pre-computed key and value hidden-states are of shape *[batch_size, max_length]*.
+        output_attentions (`bool`, *optional*):
+            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
+            tensors for more detail.
+        output_hidden_states (`bool`, *optional*):
+            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
+            more detail.
+        return_dict (`bool`, *optional*):
+            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
+"""
+
 
 
 def create_sinusoidal_positions(num_pos, dim):
@@ -883,7 +897,6 @@ class FlaxGPTJModel(FlaxGPTJPreTrainedModel):
 
 append_call_sample_docstring(
     FlaxGPTJModel,
-    _TOKENIZER_FOR_DOC,
     _CHECKPOINT_FOR_DOC,
     FlaxCausalLMOutput,
     _CONFIG_FOR_DOC,

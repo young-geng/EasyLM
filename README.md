@@ -51,7 +51,7 @@ script to set up the TPU host.
 Model training can be launched via the python scripts in the main directory. For
 example, to laucnh GPT-J training, the following command can be used:
 ``` shell
-python -m EasyLM.main.gptj_train
+python -m EasyLM.models.gptj.gptj_train
 ```
 For Cloud TPU Pods, the same training command needs to be invoked on each host
 in the pod.
@@ -63,7 +63,7 @@ following command to launch the HTTP server for GPT-J with pretrained weights
 from Huggingface transformers:
 
 ```shell
-python -m EasyLM.main.gptj_serve \
+python -m EasyLM.models.gptj.gptj_serve \
     --load_gptj_config='huggingface::EleutherAI/gpt-j-6B' \
     --load_checkpoint='huggingface::EleutherAI/gpt-j-6B' \
     --dtype='bf16' \
@@ -77,7 +77,7 @@ python -m EasyLM.main.gptj_serve \
 Use the following command to evaluate the the langauge model served with the
 HTTP server:
 ```shell
-python -m EasyLM.main.lm_eval \
+python -m EasyLM.scripts.lm_eval \
     --lm_server_url='http://localhost:5007/' \
     --tasks='wsc,piqa,winogrande,openbookqa,logiqa' \
     --shots=0

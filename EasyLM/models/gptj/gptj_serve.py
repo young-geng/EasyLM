@@ -25,21 +25,20 @@ from flax.training.train_state import TrainState
 import optax
 
 
-from ..data import PretrainDataset
-from ..jax_utils import (
+from ...data import PretrainDataset
+from ...jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     optax_add_scheduled_weight_decay
 )
-from ..utils import (
+from ...utils import (
     WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
     load_pickle, load_checkpoint
 )
-from ..models.gptj import (
+from ...serving import LMServer
+from .gptj import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
 )
-from ..serving import LMServer
-
 
 FLAGS_DEF = define_flags_with_default(
     seed=42,
