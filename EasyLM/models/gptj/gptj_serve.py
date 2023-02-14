@@ -70,9 +70,9 @@ def main(argv):
     with jax.default_device(jax.devices("cpu")[0]):
         gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
-        if load_type == 'file':
+        if load_type == 'trainstate_params':
             params = flax.core.frozen_dict.freeze(
-                load_checkpoint(load_path, target=None)['params']
+                load_checkpoint(load_path)['params']
             )
         elif load_type == 'huggingface':
             params = gptj_config.load_pretrained(load_path)

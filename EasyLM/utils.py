@@ -8,13 +8,14 @@ import inspect
 from copy import copy
 from socket import gethostname
 from concurrent.futures import ThreadPoolExecutor
+import logging
 
 import absl.flags
 import cloudpickle as pickle
 import gcsfs
 import numpy as np
 import wandb
-from absl import logging
+import absl.logging
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from ml_collections.config_flags import config_flags
@@ -24,7 +25,7 @@ import flax
 from flax.serialization import from_bytes, to_bytes
 import msgpack
 
-from .jax_utils import init_rng
+from .jax_utils import init_rng, named_tree_map
 
 
 class Timer(object):
@@ -198,7 +199,7 @@ def set_random_seed(seed):
 
 
 def print_flags(flags, flags_def):
-    logging.info(
+    absl.logging.info(
         "Running training with hyperparameters: \n{}".format(
             pprint.pformat(
                 [
@@ -249,6 +250,7 @@ def prefix_metrics(metrics, prefix):
 
 def open_file(path, mode='rb'):
     if path.startswith("gs://"):
+        logging.getLogger("fsspec").setLevel(logging.WARNING)
         return gcsfs.GCSFileSystem().open(path, mode, cache_type='block')
     else:
         return open(path, mode)
@@ -260,14 +262,17 @@ def load_pickle(path):
     return data
 
 
-def load_checkpoint(path, target):
+def load_checkpoint(path, target=None):
     flattend_train_state = {}
     with open_file(path) as fin:
         unpacker = msgpack.Unpacker(fin, max_buffer_size=0)
         for key, value in unpacker:
             flattend_train_state[tuple(key)] = from_bytes(None, value)
 
-    return flax.traverse_util.unflatten_dict(flattend_train_state)
+    train_state = flax.traverse_util.unflatten_dict(flattend_train_state)
+    if target is None:
+        return train_state
+    return flax.serialization.from_state_dict(target, train_state)
 
 
 def function_args_to_config(fn, none_arg_types=None, exclude_args=None, override_args=None):

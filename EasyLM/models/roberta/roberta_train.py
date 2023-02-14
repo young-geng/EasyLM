@@ -216,30 +216,34 @@ def main(argv):
         logger.save_checkpoint(train_state, 'train_state')
 
     start_step = 0
+    restored_checkpoint_state = None
+    restored_params = None
     if FLAGS.load_checkpoint != '':
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
         with jax.default_device(jax.devices("cpu")[0]):
-            if load_type == 'file':
+            if load_type == 'trainstate':
                 restored_checkpoint_state = load_checkpoint(
                     load_path, train_state_shapes
                 )
                 start_step = restored_checkpoint_state.step
+            elif load_type == 'trainstate_params':
+                restored_params = flax.core.frozen_dict.freeze(
+                    load_checkpoint(load_path)['params']
+                )
             elif load_type == 'huggingface':
                 restored_params = roberta_config.load_pretrained(load_path)
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
-        if FLAGS.load_checkpoint != '':
-            load_type, _ = FLAGS.load_checkpoint.split('::', 1)
-            if load_type == 'file':
-                train_state = sharding_helper.put(restored_checkpoint_state)
-                del restored_checkpoint_state
-            elif load_type == 'huggingface':
-                train_state = sharded_init_fn(next_rng())
-                train_state = sharding_helper.get(train_state)
-                train_state = train_state.replace(params=restored_params)
-                train_state = sharding_helper.put(train_state)
-                del restored_params
+        if restored_checkpoint_state is not None:
+            train_state = sharding_helper.put(restored_checkpoint_state)
+            del restored_checkpoint_state
+        elif restored_params is not None:
+            train_state = sharded_init_fn(next_rng())
+            train_state = sharding_helper.get(train_state)
+            train_state = train_state.replace(params=restored_params)
+            train_state = sharding_helper.put(train_state)
+            del restored_params
         else:
             train_state = sharded_init_fn(next_rng())
 
