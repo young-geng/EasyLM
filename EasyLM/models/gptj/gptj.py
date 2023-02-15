@@ -231,7 +231,7 @@ class GPTJConfig(PretrainedConfig):
         return config
 
     @classmethod
-    def get_tokenizer(cls, config, padding_side='left'):
+    def get_tokenizer(cls, config, padding_side='left', truncation_side='right'):
         config = cls.get_tokenizer_config(config)
         return AutoTokenizer.from_pretrained(
             config.name,
@@ -241,6 +241,7 @@ class GPTJConfig(PretrainedConfig):
             cls_token=config.cls_token,
             mask_token=config.mask_token,
             padding_side=padding_side,
+            truncation_side=truncation_side,
         )
 
     @staticmethod
@@ -253,7 +254,7 @@ class GPTJConfig(PretrainedConfig):
     @classmethod
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
-        if load_type == 'file':
+        if load_type == 'pickle':
             return load_pickle(load_path)['gptj_config']
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)

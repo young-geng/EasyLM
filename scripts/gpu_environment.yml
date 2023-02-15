@@ -14,7 +14,7 @@ dependencies:
     - scikit-learn
     - jupyter
     - tqdm
-    - pytorch=1.13.0
+    - pytorch-cpu=1.13.0
     - jax=0.3.16
     - jaxlib=0.3.15=*cuda*
     - cudatoolkit=11.3

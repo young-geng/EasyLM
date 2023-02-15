@@ -20,6 +20,7 @@ class LMServer(object):
     @staticmethod
     def get_default_config(updates=None):
         config = ConfigDict()
+        config.chat = False
         config.name = 'lm_server'
         config.host = '0.0.0.0'
         config.port = 5007
@@ -52,7 +53,7 @@ class LMServer(object):
         raise NotImplementedError()
 
     @staticmethod
-    def generate(text, temperature):
+    def generate(text):
         raise NotImplementedError()
 
     @staticmethod
@@ -164,7 +165,6 @@ class LMServer(object):
                     + pprint.pformat(data) + '\n'
                 )
             prefix_text = data['prefix_text']
-            temperature = data.get('temperature', self.config.default_temperature)
 
             output_text = []
             for i in trange(0, len(prefix_text), self.config.batch_size, ncols=0):
@@ -175,12 +175,11 @@ class LMServer(object):
                     extra = self.config.batch_size - batch_size
                     batch_prefix_text.extend(['a' for _ in range(extra)])
 
-                batch_output_text = self.generate(batch_prefix_text, temperature)
+                batch_output_text = self.generate(batch_prefix_text)
                 output_text.extend(self.to_list(batch_output_text)[:batch_size])
 
             output = {
                 'prefix_text': prefix_text,
-                'temperature': temperature,
                 'output_text': output_text,
             }
             if self.config.logging:
@@ -227,7 +226,7 @@ class LMServer(object):
     def serve_ready(self):
         return 'Ready!\n'
 
-    def run(self):
+    def run_server(self):
         if self.config.pre_compile != '':
             if self.config.pre_compile == 'all':
                 pre_compile = ['loglikelihood', 'generate', 'greedy_until']
@@ -240,7 +239,7 @@ class LMServer(object):
                     self.loglikelihood(pre_compile_data, pre_compile_data)
                     self.loglikelihood_rolling(pre_compile_data)
                 elif task == 'generate':
-                    self.generate(pre_compile_data, 1.0)
+                    self.generate(pre_compile_data)
                 elif task == 'greedy_until':
                     self.greedy_until(
                         pre_compile_data, pre_compile_data,
@@ -251,3 +250,17 @@ class LMServer(object):
 
         self.app.run(host=self.config.host, port=self.config.port)
 
+    def run_chat(self):
+        self.generate(['precompile data'])
+        context = ''
+        while True:
+            context = context + input('>>> ')
+            output = self.generate([context])[0]
+            context = context + output
+            print('\n' + output + '\n')
+
+    def run(self):
+        if self.config.chat:
+            self.run_chat()
+        else:
+            self.run_server()

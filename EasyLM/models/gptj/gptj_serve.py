@@ -50,6 +50,7 @@ FLAGS_DEF = define_flags_with_default(
     top_k=50,
     top_p=1.0,
     do_sample=False,
+    temperature=1.0,
     num_beams=1,
     load_gptj_config='',
     load_checkpoint='',
@@ -66,6 +67,9 @@ def main(argv):
     set_random_seed(FLAGS.seed)
 
     tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
+    generation_tokenizer = GPTJConfig.get_tokenizer(
+        FLAGS.tokenizer, truncation_side='left'
+    )
 
     with jax.default_device(jax.devices("cpu")[0]):
         gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
@@ -138,10 +142,10 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS(), PS()),
+        in_axis_resources=(model_ps, PS(), PS()),
         out_axis_resources=(PS(), PS())
     )
-    def forward_generate(params, rng, temperature, batch):
+    def forward_generate(params, rng, batch):
         batch = with_sharding_constraint(batch, PS('dp'))
         rng_generator = JaxRNG(rng)
         output = hf_model.generate(
@@ -153,7 +157,7 @@ def main(argv):
             pad_token_id=tokenizer.eos_token_id,
             bos_token_id=tokenizer.bos_token_id,
             eos_token_id=tokenizer.eos_token_id,
-            temperature=temperature,
+            temperature=FLAGS.temperature,
             top_k=FLAGS.top_k,
             top_p=FLAGS.top_p,
             num_beams=FLAGS.num_beams,
@@ -304,9 +308,9 @@ def main(argv):
             return total_loglikelihood, total_is_greedy
 
         @staticmethod
-        def generate(text, temperature):
+        def generate(text):
             nonlocal sharded_rng
-            inputs = tokenizer(
+            inputs = generation_tokenizer(
                 text,
                 padding='max_length',
                 truncation=True,
@@ -319,10 +323,15 @@ def main(argv):
             )
             with mesh:
                 output, sharded_rng = forward_generate(
-                    params, sharded_rng, temperature, batch
+                    params, sharded_rng, batch
                 )
                 output = jax.device_get(output)
-            output_text = list(tokenizer.batch_decode(output))
+            output_text = []
+            for text in list(tokenizer.batch_decode(output)):
+                if tokenizer.eos_token in text:
+                    text = text.split(tokenizer.eos_token, maxsplit=1)[0]
+                output_text.append(text)
+
             return output_text
 
         @staticmethod

@@ -321,7 +321,7 @@ class OPTConfig(PretrainedConfig):
     @classmethod
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
-        if load_type == 'file':
+        if load_type == 'pickle':
             return load_pickle(load_path)['gptj_config']
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)
