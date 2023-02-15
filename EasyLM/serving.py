@@ -252,12 +252,17 @@ class LMServer(object):
 
     def run_chat(self):
         self.generate(['precompile data'])
+        print('Type ">reset" to reset the context.')
         context = ''
         while True:
-            context = context + input('>>> ')
+            prompt = input('>>> ')
+            if prompt == '>reset':
+                context = ''
+                continue
+            context = context + prompt
             output = self.generate([context])[0]
             context = context + output
-            print('\n' + output + '\n')
+            print(output + '\n')
 
     def run(self):
         if self.config.chat:

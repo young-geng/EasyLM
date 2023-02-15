@@ -209,7 +209,7 @@ def main(argv):
             step=step,
             variant=variant,
             flags=flags_config_dict,
-            roberta_config=roberta_config,
+            roberta_config=roberta_config.to_dict(),
         )
         logger.save_pickle(metadata, 'metadata.pkl')
         logger.save_pickle(dataset, 'dataset.pkl')
