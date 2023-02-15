@@ -27,7 +27,7 @@ dependencies:
         - distrax==0.1.2
         - orbax==0.0.23
         - transformers==4.26.0
-        - datasets==2.7.0
+        - datasets==2.9.0
         - einops
         - tensorflow==2.11.0
         - dill
@@ -40,4 +40,4 @@ dependencies:
         - gcsfs==2022.11.0
         - requests
         - jupyter_http_over_ws
-        - lm-eval
+        - lm-eval==0.3.0

@@ -23,7 +23,7 @@ distrax==0.1.2
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==1.12.1
 transformers==4.26.0
-datasets==2.7.0
+datasets==2.9.0
 tqdm
 ml_collections
 wandb==0.13.5
@@ -31,7 +31,7 @@ gcsfs==2022.11.0
 requests
 typing-extensions
 flask
-lm-eval
+lm-eval==0.3.0
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt
