@@ -5,10 +5,8 @@ import re
 
 from tqdm import tqdm, trange
 import numpy as np
-import wandb
+import mlxu
 
-import absl.app
-import absl.flags
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit, with_sharding_constraint
@@ -24,16 +22,13 @@ from ...data import PretrainDataset
 from ...jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay
+    optax_add_scheduled_weight_decay, set_random_seed
 )
-from ...utils import (
-    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle, load_checkpoint, user_flags_to_config_dict
-)
+from ...checkpoint import StreamingCheckpointer
 from .opt import OPTConfig, FlaxOPTForCausalLMModule
 
 
-FLAGS_DEF = define_flags_with_default(
+FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
@@ -54,20 +49,18 @@ FLAGS_DEF = define_flags_with_default(
     tokenizer=OPTConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
     opt=OPTConfig.get_default_config(),
-    logger=WandBLogger.get_default_config(),
+    logger=mlxu.WandBLogger.get_default_config(),
     log_all_worker=False,
 )
-FLAGS = absl.flags.FLAGS
 
 
 def main(argv):
-    FLAGS = absl.flags.FLAGS
     if FLAGS.initialize_jax_distributed:
         jax.distributed.initialize()
 
-    variant = get_user_flags(FLAGS, FLAGS_DEF)
-    flags_config_dict = user_flags_to_config_dict(FLAGS, FLAGS_DEF)
-    logger = WandBLogger(
+    variant = mlxu.get_user_flags(FLAGS, FLAGS_DEF)
+    flags_config_dict = mlxu.user_flags_to_config_dict(FLAGS, FLAGS_DEF)
+    logger = mlxu.WandBLogger(
         config=FLAGS.logger,
         variant=variant,
         enable=FLAGS.log_all_worker or (jax.process_index() == 0),
@@ -75,7 +68,7 @@ def main(argv):
     set_random_seed(FLAGS.seed)
 
     if FLAGS.load_dataset_state != '':
-        dataset = load_pickle(FLAGS.load_dataset_state)
+        dataset = mlxu.load_pickle(FLAGS.load_dataset_state)
     else:
         tokenizer = OPTConfig.get_tokenizer(FLAGS.tokenizer)
         dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
@@ -170,6 +163,9 @@ def main(argv):
     )
 
     sharding_helper = ShardingHelper(train_state_partition)
+    checkpointer = StreamingCheckpointer(
+        logger.checkpoint_dir, enable=jax.process_index() == 0
+    )
 
     sharded_init_fn = pjit(
         init_fn,
@@ -193,9 +189,9 @@ def main(argv):
             flags=flags_config_dict,
             opt_config=opt_config,
         )
-        logger.save_pickle(metadata, 'metadata.pkl')
-        logger.save_pickle(dataset, 'dataset.pkl')
-        logger.save_checkpoint(train_state, 'train_state')
+        checkpointer.save_pickle(metadata, 'metadata.pkl')
+        checkpointer.save_pickle(dataset, 'dataset.pkl')
+        checkpointer.save_checkpoint(train_state, 'train_state')
 
     start_step = 0
     restored_checkpoint_state = None
@@ -204,13 +200,13 @@ def main(argv):
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
         with jax.default_device(jax.devices("cpu")[0]):
             if load_type == 'trainstate':
-                restored_checkpoint_state = load_checkpoint(
+                restored_checkpoint_state = checkpointer.load_checkpoint(
                     load_path, train_state_shapes
                 )
                 start_step = restored_checkpoint_state.step
             elif load_type == 'trainstate_params':
                 restored_params = flax.core.frozen_dict.freeze(
-                    load_checkpoint(load_path)['params']
+                    checkpointer.load_checkpoint(load_path)['params']
                 )
             elif load_type == 'huggingface':
                 restored_params = opt_config.load_pretrained(load_path)
@@ -255,4 +251,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    absl.app.run(main)
+    mlxu.run(main)

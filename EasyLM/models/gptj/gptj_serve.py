@@ -8,12 +8,9 @@ from threading import Lock
 
 from tqdm import tqdm, trange
 import numpy as np
-import wandb
 from flask import Flask, request
+import mlxu
 
-import absl.app
-import absl.flags
-import absl.logging
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit, with_sharding_constraint
@@ -25,22 +22,18 @@ from flax.training.train_state import TrainState
 import optax
 
 
-from ...data import PretrainDataset
 from ...jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay
+    optax_add_scheduled_weight_decay, set_random_seed
 )
-from ...utils import (
-    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle, load_checkpoint
-)
+from ...checkpoint import StreamingCheckpointer
 from ...serving import LMServer
 from .gptj import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
 )
 
-FLAGS_DEF = define_flags_with_default(
+FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
@@ -57,11 +50,9 @@ FLAGS_DEF = define_flags_with_default(
     tokenizer=GPTJConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
-FLAGS = absl.flags.FLAGS
 
 
 def main(argv):
-    FLAGS = absl.flags.FLAGS
     if FLAGS.initialize_jax_distributed:
         jax.distributed.initialize()
     set_random_seed(FLAGS.seed)
@@ -76,7 +67,7 @@ def main(argv):
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
         if load_type == 'trainstate_params':
             params = flax.core.frozen_dict.freeze(
-                load_checkpoint(load_path)['params']
+                StreamingCheckpointer.load_checkpoint(load_path)['params']
             )
         elif load_type == 'huggingface':
             params = gptj_config.load_pretrained(load_path)
@@ -395,4 +386,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    absl.app.run(main)
+    mlxu.run(main)

@@ -4,6 +4,7 @@ from typing import Any, Mapping, Text, Tuple, Union, NamedTuple
 from functools import partial
 import re
 import dataclasses
+import random
 
 import dill
 import flax
@@ -82,6 +83,12 @@ class ShardingHelper(object):
             return shard_fn(tensor).block_until_ready()
 
         return jax.tree_util.tree_map(put_fn, self.shard_fns, tree)
+
+
+def set_random_seed(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    init_rng(seed)
 
 
 def get_jax_mp_mesh(mp_axis_dim, mp_axis_name='mp', dp_axis_name='dp'):

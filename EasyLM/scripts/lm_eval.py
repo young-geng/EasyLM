@@ -10,30 +10,36 @@ import requests
 from tqdm import tqdm, trange
 import numpy as np
 import wandb
-
-import absl.app
-import absl.flags
-import absl.logging
+import mlxu
 
 from flax.traverse_util import flatten_dict
 from lm_eval import evaluator, tasks
 from lm_eval.base import LM
 
-from ..utils import (
-    WandBLogger, define_flags_with_default, get_user_flags, set_random_seed,
-    load_pickle
-)
 
-
-
-FLAGS_DEF = define_flags_with_default(
+FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
+    dummy_lm=False,
     lm_server_url='http://localhost:5007/',
     tasks='wsc,piqa,winogrande,openbookqa,logiqa',
     shots=0,
     wait_for_ready=True,
-    logger=WandBLogger.get_default_config(),
+    logger=mlxu.WandBLogger.get_default_config(),
 )
-FLAGS = absl.flags.FLAGS
+
+
+class DummyLM(LM):
+
+    def wait_for_ready(self):
+        pass
+
+    def greedy_until(self, inputs):
+        return [until for _, until in inputs]
+
+    def loglikelihood_rolling(self, inputs):
+        return [(-20.0, True) for _ in inputs]
+
+    def loglikelihood(self, inputs):
+        return [(-20.0, True) for _ in inputs]
 
 
 class LMEvalHarnessInterface(LM):
@@ -79,10 +85,13 @@ class LMEvalHarnessInterface(LM):
 
 
 def main(argv):
-    logger = WandBLogger(
-        config=FLAGS.logger, variant=get_user_flags(FLAGS, FLAGS_DEF)
+    logger = mlxu.WandBLogger(
+        config=FLAGS.logger, variant=mlxu.get_user_flags(FLAGS, FLAGS_DEF)
     )
-    model = LMEvalHarnessInterface(FLAGS.lm_server_url)
+    if FLAGS.dummy_lm:
+        model = DummyLM()
+    else:
+        model = LMEvalHarnessInterface(FLAGS.lm_server_url)
     if FLAGS.wait_for_ready:
         model.wait_for_ready()
     task_list = FLAGS.tasks.split(',')
@@ -94,4 +103,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    absl.app.run(main)
+    mlxu.run(main)
