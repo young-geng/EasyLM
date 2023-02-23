@@ -21,17 +21,17 @@ from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
 import optax
 
-
-from ...jax_utils import (
+from EasyLM.checkpoint import StreamingCheckpointer
+from EasyLM.serving import LMServer
+from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay, set_random_seed
+    set_random_seed
 )
-from ...checkpoint import StreamingCheckpointer
-from ...serving import LMServer
-from .gptj import (
+from EasyLM.models.gptj.gptj_model import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
 )
+
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,

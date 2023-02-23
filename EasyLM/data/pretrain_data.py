@@ -45,7 +45,7 @@ class HuggingfaceDataset(object):
         while True:
             tokens = []
             for example in self._dataset:
-                tokens.extend(self.tokenizer.encode(example['text']))
+                tokens.extend(self.tokenizer.encode(example[self.config.field]))
                 tokens.append(self.tokenizer.eos_token_id)
                 while len(tokens) > chunk_size:
                     yield {

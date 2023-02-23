@@ -17,16 +17,16 @@ from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
 import optax
 
-
-from ...data import PretrainDataset
-from ...jax_utils import (
+from EasyLM.data import PretrainDataset
+from EasyLM.checkpoint import StreamingCheckpointer
+from EasyLM.optimizers import OptimizerFactory
+from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    optax_add_scheduled_weight_decay, flatten_tree, set_random_seed
+    set_random_seed
 )
-from ...checkpoint import StreamingCheckpointer
-from .roberta import (
-    RobertaConfig, FlaxRobertaForMaskedLMModule, FlaxRobertaForMaskedLM
+from EasyLM.models.roberta.roberta_model import (
+    RobertaConfig, FlaxRobertaForMaskedLMModule
 )
 
 
@@ -36,14 +36,6 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     mp_mesh_dim=1,
     mask_token_probability=0.15,
     total_steps=10000,
-    accumulate_gradient_step=1,
-    lr=0.01,
-    lr_warmup_steps=10000,
-    opt_b1=0.9,
-    opt_b2=0.99,
-    clip_gradient=1.0,
-    weight_decay=1e-4,
-    bf16_momentum=False,
     load_roberta_config='',
     load_checkpoint='',
     load_dataset_state='',
@@ -51,6 +43,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     save_model_freq=0,
     tokenizer=RobertaConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
+    optimizer=OptimizerFactory.get_default_config(),
     roberta=RobertaConfig.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
     log_all_worker=False,
@@ -99,32 +92,9 @@ def main(argv):
             return True
         return named_tree_map(decay, params, sep='/')
 
-    def learning_rate_schedule(step):
-        multiplier = FLAGS.lr / 0.01
-        return multiplier / jnp.sqrt(jnp.maximum(step, FLAGS.lr_warmup_steps))
-
-    def weight_decay_schedule(step):
-        multiplier = FLAGS.weight_decay / 1e-4
-        return -multiplier * jnp.square(learning_rate_schedule(step))
-
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(FLAGS.clip_gradient),
-        optax.adafactor(
-            learning_rate=learning_rate_schedule,
-            multiply_by_parameter_scale=True,
-            momentum=FLAGS.opt_b1,
-            decay_rate=FLAGS.opt_b2,
-            factored=False,
-            clipping_threshold=None,
-            dtype_momentum=jnp.bfloat16 if FLAGS.bf16_momentum else jnp.float32,
-        ),
-        optax_add_scheduled_weight_decay(
-            weight_decay_schedule, weight_decay_mask
-        )
+    optimizer, optimizer_info = OptimizerFactory.get_optimizer(
+        FLAGS.optimizer, weight_decay_mask
     )
-
-    if FLAGS.accumulate_gradient_step > 1:
-        optimizer = optax.MultiSteps(optimizer, FLAGS.accumulate_gradient_step)
 
     def init_fn(rng):
         rng_generator = JaxRNG(rng)
@@ -169,7 +139,7 @@ def main(argv):
         metrics = dict(
             loss=loss,
             accuracy=accuracy,
-            learning_rate=learning_rate_schedule(train_state.step),
+            learning_rate=optimizer_info['learning_rate_schedule'](train_state.step),
             gradient_norm=global_norm(grads),
             param_norm=global_norm(train_state.params),
         )
