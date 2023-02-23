@@ -45,7 +45,7 @@ class OptimizerFactory(object):
                 config.adamw_optimizer, weight_decay_mask
             )
         else:
-            raise ValueError(f'Unknown optimizer type: {config.optimizer_type}')
+            raise ValueError(f'Unknown optimizer type: {config.type}')
 
         if config.accumulate_gradient_steps > 1:
             optimizer = optax.MultiSteps(
