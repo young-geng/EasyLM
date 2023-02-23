@@ -330,6 +330,8 @@ def main(argv):
             nonlocal sharded_rng
             all_outputs = []
             for pf, ut in zip(prefix_text, until):
+                if isinstance(ut, str):
+                    ut = [ut]
                 total_length = 0
                 total_generated = ''
 
@@ -373,7 +375,12 @@ def main(argv):
                     total_generated = total_generated + output_text
                     pf = pf + output_text
 
-                    if ut in total_generated:
+                    done = False
+                    for s in ut:
+                        if s in total_generated:
+                            total_generated = total_generated.split(s, maxsplit=1)[0]
+                            done = True
+                    if done:
                         break
 
                 all_outputs.append(total_generated)
