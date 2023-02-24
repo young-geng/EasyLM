@@ -77,8 +77,9 @@ def main(argv):
     opt_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
-        vocab_size=dataset.vocab_size,
     ))
+    if opt_config.vocab_size < dataset.vocab_size:
+        opt_config.update(dict(vocab_size=dataset.vocab_size))
     model = FlaxOPTForCausalLMModule(opt_config)
 
     def weight_decay_mask(params):

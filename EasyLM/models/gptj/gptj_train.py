@@ -76,8 +76,9 @@ def main(argv):
     gptj_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
         eos_token_id=dataset.tokenizer.eos_token_id,
-        vocab_size=dataset.vocab_size,
     ))
+    if gptj_config.vocab_size < dataset.vocab_size:
+        gptj_config.update(dict(vocab_size=dataset.vocab_size))
     model = FlaxGPTJForCausalLMModule(gptj_config)
 
     def weight_decay_mask(params):

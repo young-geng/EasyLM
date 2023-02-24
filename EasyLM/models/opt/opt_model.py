@@ -238,8 +238,7 @@ class OPTConfig(PretrainedConfig):
     @classmethod
     def get_default_config(cls, updates=None):
         none_arg_types = dict(
-            n_inner=int,
-            rotary_dim=int,
+            word_embed_proj_dim=int,
         )
         config = function_args_to_config(cls.__init__, none_arg_types=none_arg_types)
 
@@ -286,12 +285,7 @@ class OPTConfig(PretrainedConfig):
     @staticmethod
     def get_tokenizer_config(updates=None):
         config = ConfigDict()
-        config.name = 'facebook/opt-350m'
-        config.bos_token = '</s>'
-        config.eos_token = '</s>'
-        config.pad_token = '</s>'
-        config.cls_token = '</s>'
-        config.mask_token = '</s>'
+        config.name = 'patrickvonplaten/opt-30b'
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -302,19 +296,15 @@ class OPTConfig(PretrainedConfig):
     def get_tokenizer(cls, config, padding_side='left'):
         config = cls.get_tokenizer_config(config)
         return AutoTokenizer.from_pretrained(
-            config.name,
-            bos_token=config.bos_token,
-            eos_token=config.eos_token,
-            pad_token=config.pad_token,
-            cls_token=config.cls_token,
-            mask_token=config.mask_token,
-            padding_side=padding_side,
+            config.name, padding_side=padding_side,
         )
 
     @staticmethod
     def load_pretrained(name):
         with jax.default_device(jax.devices("cpu")[0]):
-            params = FlaxOPTForCausalLM.from_pretrained(name, _do_init=False)[1]
+            params = FlaxOPTForCausalLM.from_pretrained(
+                name, dtype=jnp.float32, _do_init=False
+            )[1]
             params = freeze({'params': params})
         return params
 
@@ -322,7 +312,7 @@ class OPTConfig(PretrainedConfig):
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
-            return load_pickle(load_path)['gptj_config']
+            return load_pickle(load_path)['opt_config']
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)
         else:
