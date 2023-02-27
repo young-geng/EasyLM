@@ -58,6 +58,7 @@ class HuggingfaceDataset(object):
         config.split = 'train'
         config.field = 'text'
         config.field_sep = ' '
+        config.prefix_field = ''
         config.streaming = True
         config.batch_size = 8
 
@@ -78,20 +79,35 @@ class HuggingfaceDataset(object):
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
         while True:
-            tokens = []
+            token_buffer = []
+            loss_mask_buffer = []
             for example in self._dataset:
+                if self.config.prefix_field != '':
+                    prefix_text = self.config.field_sep.join(
+                        [example[key] for key in self.config.prefix_field.split(',')]
+                    )
+                    prefix_tokens = self.tokenizer.encode(prefix_text)
+                    token_buffer.extend(prefix_tokens)
+                    loss_mask_buffer.extend([0.0 for _ in range(len(prefix_tokens))])
+
                 text = self.config.field_sep.join(
                     [example[key] for key in self.config.field.split(',')]
                 )
-                tokens.extend(self.tokenizer.encode(text))
-                tokens.append(self.tokenizer.eos_token_id)
-                while len(tokens) > chunk_size:
+                tokens = self.tokenizer.encode(text)
+                token_buffer.extend(tokens)
+                token_buffer.append(self.tokenizer.eos_token_id)
+                loss_mask_buffer.extend([1.0 for _ in range(len(tokens) + 1)])
+                while len(token_buffer) > chunk_size:
                     yield {
-                        'tokens': np.array(tokens[:chunk_size], dtype=np.int32).reshape(
+                        'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                             self.config.batch_size, -1
-                        )
+                        ),
+                        'loss_masks': np.array(loss_mask_buffer[:chunk_size], dtype=np.float32).reshape(
+                            self.config.batch_size, -1
+                        ),
                     }
-                    tokens = tokens[chunk_size:]
+                    token_buffer = token_buffer[chunk_size:]
+                    loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
     def __getstate__(self):
         return self.config, self.tokenizer
@@ -131,6 +147,7 @@ class H5Dataset(object):
         config.path = ''
         config.field = 'text'
         config.field_sep = ' '
+        config.prefix_field = ''
         config.seq_length = 1024
         config.batch_size = 8
 
@@ -152,22 +169,38 @@ class H5Dataset(object):
             h5_file = h5py.File(self.config.path, 'r')
 
         chunk_size = self.config.batch_size * self.config.seq_length
-        tokens = []
         fields = self.config.field.split(',')
+        prefix_fields = self.config.prefix_field.split(',')
+        token_buffer = []
+        loss_mask_buffer = []
         while True:
+            if self.config.prefix_field != '':
+                prefix_text = self.config.field_sep.join(
+                    [mlxu.array_to_text(h5_file[field][self.index]) for field in prefix_fields]
+                )
+                prefix_tokens = self.tokenizer.encode(prefix_text)
+                token_buffer.extend(prefix_tokens)
+                loss_mask_buffer.extend([0.0 for _ in range(len(prefix_tokens))])
+
             text = self.config.field_sep.join(
                 [mlxu.array_to_text(h5_file[field][self.index]) for field in fields]
             )
+            tokens = self.tokenizer.encode(text)
             self.index = (self.index + 1) % h5_file[fields[0]].shape[0]
-            tokens.extend(self.tokenizer.encode(text))
-            tokens.append(self.tokenizer.eos_token_id)
-            while len(tokens) > chunk_size:
+            token_buffer.extend(tokens)
+            token_buffer.append(self.tokenizer.eos_token_id)
+            loss_mask_buffer.extend([1.0 for _ in range(len(tokens) + 1)])
+            while len(token_buffer) > chunk_size:
                 yield {
-                    'tokens': np.array(tokens[:chunk_size], dtype=np.int32).reshape(
+                    'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                         self.config.batch_size, -1
-                    )
+                    ),
+                    'loss_masks': np.array(loss_mask_buffer[:chunk_size], dtype=np.float32).reshape(
+                        self.config.batch_size, -1
+                    ),
                 }
-                tokens = tokens[chunk_size:]
+                token_buffer = token_buffer[chunk_size:]
+                loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
     def __getstate__(self):
         return self.config, self.tokenizer, self.index
@@ -200,6 +233,7 @@ class JsonDataset(object):
         config.path = ''
         config.field = 'text'
         config.field_sep = ' '
+        config.prefix_field = ''
         config.seq_length = 1024
         config.batch_size = 8
 
@@ -227,19 +261,33 @@ class JsonDataset(object):
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
-        tokens = []
         fields = self.config.field.split(',')
+        prefix_fields = self.config.prefix_field.split(',')
+        token_buffer = []
+        loss_mask_buffer = []
         for example in self.json_iterator():
+            if self.config.prefix_field != '':
+                prefix_text = self.config.field_sep.join([example[field] for field in prefix_fields])
+                prefix_tokens = self.tokenizer.encode(prefix_text)
+                token_buffer.extend(prefix_tokens)
+                loss_mask_buffer.extend([0.0 for _ in range(len(prefix_tokens))])
+
             text = self.config.field_sep.join([example[field] for field in fields])
-            tokens.extend(self.tokenizer.encode(text))
-            tokens.append(self.tokenizer.eos_token_id)
-            while len(tokens) > chunk_size:
+            tokens = self.tokenizer.encode(text)
+            token_buffer.extend(tokens)
+            token_buffer.append(self.tokenizer.eos_token_id)
+            loss_mask_buffer.extend([1.0 for _ in range(len(tokens) + 1)])
+            while len(token_buffer) > chunk_size:
                 yield {
-                    'tokens': np.array(tokens[:chunk_size], dtype=np.int32).reshape(
+                    'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                         self.config.batch_size, -1
-                    )
+                    ),
+                    'loss_masks': np.array(loss_mask_buffer[:chunk_size], dtype=np.float32).reshape(
+                        self.config.batch_size, -1
+                    ),
                 }
-                tokens = tokens[chunk_size:]
+                token_buffer = token_buffer[chunk_size:]
+                loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
     def __getstate__(self):
         return self.config, self.tokenizer
