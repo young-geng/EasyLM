@@ -45,6 +45,9 @@ class PretrainDataset(object):
 
 
 class HuggingfaceDataset(object):
+    """ Huggingface dataset, where the dataset is loaded using the huggingface
+        datasets.load_dataset() function.
+    """
 
     @staticmethod
     def get_default_config(updates=None):
@@ -115,6 +118,12 @@ class HuggingfaceDataset(object):
 
 
 class H5Dataset(object):
+    """ HDF5 dataset, where text is encoded as uint8 arrays. We use
+        mlxu.array_to_text to convert the uint8 array back to text. Although
+        this is not the most straightforward way to store text, hdf5 does
+        support indexing, which makes it easier to load data at particular
+        index.
+    """
 
     @staticmethod
     def get_default_config(updates=None):
@@ -181,6 +190,9 @@ class H5Dataset(object):
 
 
 class JsonDataset(object):
+    """ JSON dataset, where each line of the data file contains a JSON
+        dictionary with text fields.
+    """
 
     @staticmethod
     def get_default_config(updates=None):
