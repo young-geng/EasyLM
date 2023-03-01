@@ -32,7 +32,7 @@ requests
 typing-extensions
 flask
 lm-eval==0.3.0
-mlxu==0.1.8
+mlxu==0.1.9
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt

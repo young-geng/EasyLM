@@ -163,8 +163,11 @@ class H5Dataset(object):
 
     def __iter__(self):
         if self.config.path.startswith('gs://'):
-            # Loading from GCS
-            h5_file = h5py.File(mlxu.open_file(self.config.path, 'rb'), 'r')
+            # Loading from GCS. Using block cache is important here because
+            # hdf5 does not read the file sequentially.
+            h5_file = h5py.File(
+                mlxu.open_file(self.config.path, 'rb', cache_type='block'), 'r'
+            )
         else:
             h5_file = h5py.File(self.config.path, 'r')
 
