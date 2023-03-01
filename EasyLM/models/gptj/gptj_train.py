@@ -38,6 +38,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_dataset_state='',
     log_freq=50,
     save_model_freq=0,
+    save_milestone_freq=0,
     tokenizer=GPTJConfig.get_tokenizer_config(),
     dataset=PretrainDataset.get_default_config(),
     optimizer=OptimizerFactory.get_default_config(),
@@ -152,7 +153,7 @@ def main(argv):
         donate_argnums=(0, 1),
     )
 
-    def save_checkpoint(train_state):
+    def save_checkpoint(train_state, milestone=False):
         train_state = sharding_helper.get(train_state)
         step = int(train_state.step)
         metadata = dict(
@@ -161,9 +162,16 @@ def main(argv):
             flags=flags_config_dict,
             gptj_config=gptj_config.to_dict(),
         )
-        checkpointer.save_pickle(metadata, 'metadata.pkl')
-        checkpointer.save_pickle(dataset, 'dataset.pkl')
-        checkpointer.save_checkpoint(train_state, 'train_state')
+        if milestone:
+            # Save a milestone checkpoint that will not be overwritten
+            checkpointer.save_pickle(metadata, f'metadata_{step}.pkl')
+            checkpointer.save_pickle(dataset, f'dataset_{step}.pkl')
+            checkpointer.save_checkpoint(train_state, f'train_state_{step}')
+        else:
+            # Save a normal checkpoint that can be overwritten
+            checkpointer.save_pickle(metadata, 'metadata.pkl')
+            checkpointer.save_pickle(dataset, 'dataset.pkl')
+            checkpointer.save_checkpoint(train_state, 'train_state')
 
     start_step = 0
     restored_checkpoint_state = None
@@ -215,7 +223,9 @@ def main(argv):
                 logger.log(log_metrics)
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 
-            if FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
+            if FLAGS.save_milestone_freq > 0 and (step + 1) % FLAGS.save_milestone_freq == 0:
+                save_checkpoint(train_state, milestone=True)
+            elif FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
                 save_checkpoint(train_state)
 
         if FLAGS.save_model_freq > 0:
