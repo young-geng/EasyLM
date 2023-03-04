@@ -36,6 +36,7 @@ mlxu==0.1.9
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt
+pip install flask
 
 
 # vim configurations

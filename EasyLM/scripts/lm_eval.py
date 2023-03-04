@@ -7,6 +7,7 @@ import urllib
 import time
 
 import requests
+from requests.exceptions import Timeout, ConnectionError
 from tqdm import tqdm, trange
 import numpy as np
 import wandb
@@ -52,7 +53,7 @@ class LMEvalHarnessInterface(LM):
             try:
                 requests.get(self.url)
                 return
-            except requests.Timeout as e:
+            except (Timeout, ConnectionError) as e:
                 time.sleep(10)
 
     def greedy_until(self, inputs):
