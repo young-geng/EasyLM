@@ -45,6 +45,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     do_sample=False,
     temperature=1.0,
     num_beams=1,
+    loglikelihood_add_bos_token=False,
     load_gptj_config='',
     load_checkpoint='',
     tokenizer=GPTJConfig.get_tokenizer_config(),
@@ -211,9 +212,12 @@ def main(argv):
             input_mask = np.concatenate(
                 [prefix.attention_mask, inputs.attention_mask], axis=1
             )
-            input_mask = np.concatenate(
-                [np.zeros_like(input_mask[:, :1]), input_mask[:, :-1]], axis=1
-            )
+            if FLAGS.loglikelihood_add_bos_token:
+                bos_mask = np.ones_like(input_mask[:, :1])
+            else:
+                bos_mask = np.zeros_like(input_mask[:, :1])
+
+            input_mask = np.concatenate([bos_mask, input_mask[:, :-1]], axis=1)
             output_mask = np.concatenate(
                 [np.zeros_like(prefix.attention_mask), inputs.attention_mask], axis=1
             )
