@@ -57,9 +57,11 @@ def main(argv):
         jax.distributed.initialize()
     set_random_seed(FLAGS.seed)
 
-    tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
-    generation_tokenizer = GPTJConfig.get_tokenizer(
-        FLAGS.tokenizer, truncation_side='left'
+    prefix_tokenizer = GPTJConfig.get_tokenizer(
+        FLAGS.tokenizer, truncation_side='left', padding_side='left'
+    )
+    tokenizer = GPTJConfig.get_tokenizer(
+        FLAGS.tokenizer, truncation_side='right', padding_side='right'
     )
 
     with jax.default_device(jax.devices("cpu")[0]):
@@ -117,10 +119,9 @@ def main(argv):
         ).logits
         if gptj_config.n_real_tokens is not None:
           logits = logits.at[:, :, gptj_config.n_real_tokens:].set(-1e8)
-        loglikelihood = jax.nn.log_softmax(logits, axis=-1)
-        indices = jnp.expand_dims(output_tokens, axis=-1)
-        loglikelihood = jnp.take_along_axis(loglikelihood, indices, axis=-1)
-        loglikelihood = jnp.squeeze(loglikelihood, axis=-1)
+        loglikelihood = -optax.softmax_cross_entropy_with_integer_labels(
+            logits, output_tokens
+        )
         loglikelihood = jnp.sum(loglikelihood * output_mask, axis=-1)
         match_count = jnp.sum(
             (jnp.argmax(logits, axis=-1) == output_tokens) * output_mask,
@@ -188,7 +189,7 @@ def main(argv):
         @staticmethod
         def loglikelihood(prefix_text, text):
             nonlocal sharded_rng
-            prefix = tokenizer(
+            prefix = prefix_tokenizer(
                 prefix_text,
                 padding='max_length',
                 truncation=True,
@@ -210,12 +211,11 @@ def main(argv):
             input_mask = np.concatenate(
                 [prefix.attention_mask, inputs.attention_mask], axis=1
             )
+            input_mask = np.concatenate(
+                [np.zeros_like(input_mask[:, :1]), input_mask[:, :-1]], axis=1
+            )
             output_mask = np.concatenate(
                 [np.zeros_like(prefix.attention_mask), inputs.attention_mask], axis=1
-            )
-            loglikelihood_mask = np.concatenate(
-                [np.zeros_like(prefix.attention_mask), np.ones_like(inputs.attention_mask)],
-                axis=1
             )
             batch = dict(
                 input_tokens=input_tokens,
@@ -301,7 +301,7 @@ def main(argv):
         @staticmethod
         def generate(text):
             nonlocal sharded_rng
-            inputs = generation_tokenizer(
+            inputs = prefix_tokenizer(
                 text,
                 padding='max_length',
                 truncation=True,

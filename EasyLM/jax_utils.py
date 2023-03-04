@@ -94,7 +94,7 @@ def set_random_seed(seed):
 def get_jax_mp_mesh(mp_axis_dim, mp_axis_name='mp', dp_axis_name='dp'):
     """ Return a 2D mesh for (MP, DP) partitioning. """
     device_count = jax.device_count()
-    if mp_axis_dim == -1:
+    if mp_axis_dim <= 0:
         mp_axis_dim = device_count
     assert device_count % mp_axis_dim == 0
     return Mesh(

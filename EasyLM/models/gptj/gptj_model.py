@@ -935,7 +935,7 @@ class FlaxGPTJForCausalLMModule(nn.Module):
             attention_mask = jnp.ones_like(input_ids)
         if position_ids is None:
             position_ids = jnp.broadcast_to(
-                jnp.cumsum(attention_mask, axis=-1) - 1,
+                jnp.clip(jnp.cumsum(attention_mask, axis=-1) - 1, a_min=0),
                 (batch_size, seq_length)
             )
 
