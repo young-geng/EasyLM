@@ -1,3 +1,7 @@
+# This script runs lm_eval_harness evaluations against a served language model.
+# Typically, you need to run a language model server first, e.g.:
+#    python -m EasyLM.models.gptj.gptj_serve ...
+
 import dataclasses
 import pprint
 from functools import partial
@@ -10,7 +14,6 @@ import requests
 from requests.exceptions import Timeout, ConnectionError
 from tqdm import tqdm, trange
 import numpy as np
-import wandb
 import mlxu
 
 from flax.traverse_util import flatten_dict
