@@ -195,7 +195,7 @@ class AdamWOptimizerFactory(object):
                     dtype_momentum=jnp.bfloat16 if config.bf16_momentum else jnp.float32,
                 ),
                 optax_add_scheduled_weight_decay(
-                    lambda step: -learning_rate_schedule(step),
+                    lambda step: -learning_rate_schedule(step) * config.weight_decay,
                     weight_decay_mask
                 )
             )

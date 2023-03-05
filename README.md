@@ -58,7 +58,7 @@ in the pod.
 
 ## Serving and Evaluating Pre-trained Models
 Pretrained langauge models can be served as an HTTP server and evaluated using
-(lm-eval-harness)[https://github.com/EleutherAI/lm-evaluation-harness]. Use the
+[lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness). Use the
 following command to launch the HTTP server for GPT-J with pretrained weights
 from Huggingface transformers:
 
@@ -67,7 +67,7 @@ python -m EasyLM.models.gptj.gptj_serve \
     --load_gptj_config='huggingface::EleutherAI/gpt-j-6B' \
     --load_checkpoint='huggingface::EleutherAI/gpt-j-6B' \
     --dtype='bf16' \
-    --input_length=512 \
+    --input_length=1024 \
     --seq_length=2048 \
     --lm_server.host='127.0.0.1' \
     --lm_server.pre_compile='loglikelihood' \
@@ -88,5 +88,5 @@ You can change the number of shots and the list of tasks.
 
 ## Credits
 * The JAX/Flax GPT-J and RoBERTa implementation are from [transformers](https://huggingface.co/docs/transformers/main/en/index)
-* Most of the utilities are from [m3ae_public](https://github.com/young-geng/m3ae_public)
+* Most of the JAX utilities are from [mlxu](https://github.com/young-geng/mlxu)
 * The codebase is heavily inspired by [JAXSeq](https://github.com/Sea-Snell/JAXSeq)
