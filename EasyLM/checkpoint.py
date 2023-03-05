@@ -41,7 +41,8 @@ class StreamingCheckpointer(object):
     def load_checkpoint(path, target=None):
         flattend_train_state = {}
         with mlxu.open_file(path) as fin:
-            unpacker = msgpack.Unpacker(fin, max_buffer_size=0)
+            # 83886080 bytes = 80 MB, which is 16 blocks on GCS
+            unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
             for key, value in unpacker:
                 flattend_train_state[tuple(key)] = from_bytes(None, value)
 
