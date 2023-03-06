@@ -20,15 +20,18 @@ class LMServer(object):
     @staticmethod
     def get_default_config(updates=None):
         config = ConfigDict()
-        config.chat = False
         config.name = 'lm_server'
         config.host = '0.0.0.0'
         config.port = 5007
         config.batch_size = 1
         config.logging = False
         config.pre_compile = 'loglikelihood'
-        config.default_temperature = 1.0
-        config.default_max_length = 5000
+        config.greedy_until_max_length = 5000
+        config.chat = False
+        config.chat_user_prefix = ''
+        config.chat_user_postfix = ''
+        config.chat_lm_prefix = ''
+        config.chat_lm_postfix = ''
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -199,7 +202,7 @@ class LMServer(object):
                 )
             prefix_text = data['prefix_text']
             until = data['until']
-            max_length = data.get('max_length', self.config.default_max_length)
+            max_length = data.get('max_length', self.config.greedy_until_max_length)
 
             output_text = []
             for i in range(0, len(prefix_text), self.config.batch_size):
@@ -243,7 +246,7 @@ class LMServer(object):
                 elif task == 'greedy_until':
                     self.greedy_until(
                         pre_compile_data, pre_compile_data,
-                        self.config.default_max_length
+                        self.config.greedy_until_max_length
                     )
                 else:
                     raise ValueError(f'Invalid precompile task: {task}!')
@@ -259,9 +262,13 @@ class LMServer(object):
             if prompt == '>reset':
                 context = ''
                 continue
-            context = context + prompt
+            context = (
+                context + self.config.chat_user_prefix
+                + prompt + self.config.chat_user_postfix
+                + self.config.chat_lm_prefix
+            )
             output = self.generate([context])[0]
-            context = context + output
+            context = context + output + self.config.chat_lm_postfix
             print(output + '\n')
 
     def run(self):
