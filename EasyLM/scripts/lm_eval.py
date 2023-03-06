@@ -54,7 +54,7 @@ class LMEvalHarnessInterface(LM):
     def wait_for_ready(self):
         while True:
             try:
-                requests.get(self.url)
+                requests.get(urllib.parse.urljoin(self.url, 'ready'))
                 return
             except (Timeout, ConnectionError) as e:
                 time.sleep(10)
