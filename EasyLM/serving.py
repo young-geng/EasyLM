@@ -29,9 +29,9 @@ class LMServer(object):
         config.greedy_until_max_length = 5000
         config.chat = False
         config.chat_user_prefix = ''
-        config.chat_user_postfix = ''
+        config.chat_user_suffix = ''
         config.chat_lm_prefix = ''
-        config.chat_lm_postfix = ''
+        config.chat_lm_suffix = ''
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -264,11 +264,11 @@ class LMServer(object):
                 continue
             context = (
                 context + self.config.chat_user_prefix
-                + prompt + self.config.chat_user_postfix
+                + prompt + self.config.chat_user_suffix
                 + self.config.chat_lm_prefix
             )
             output = self.generate([context])[0]
-            context = context + output + self.config.chat_lm_postfix
+            context = context + output + self.config.chat_lm_suffix
             print(output + '\n')
 
     def run(self):
