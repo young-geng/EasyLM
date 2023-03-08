@@ -8,7 +8,7 @@ from threading import Lock
 import absl.logging
 from tqdm import tqdm, trange
 import numpy as np
-import wandb
+import mlxu
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from flask import Flask, request
@@ -27,7 +27,6 @@ class LMServer(object):
         config.logging = False
         config.pre_compile = 'loglikelihood'
         config.greedy_until_max_length = 5000
-        config.chat = False
         config.chat_user_prefix = ''
         config.chat_user_suffix = ''
         config.chat_lm_prefix = ''
@@ -39,13 +38,20 @@ class LMServer(object):
 
     def __init__(self, config):
         self.config = self.get_default_config(config)
+        chat_html_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'chat.html'
+        )
+        with open(chat_html_path) as fin:
+            self.chat_html = fin.read()
         self.lock = Lock()
         self.app = Flask(self.config.name)
         self.app.post('/loglikelihood')(self.serve_loglikelihood)
         self.app.post('/loglikelihood-rolling')(self.serve_loglikelihood_rolling)
         self.app.post('/generate')(self.serve_generate)
         self.app.post('/greedy-until')(self.serve_greedy_until)
-        self.app.route('/ready')(self.serve_ready)
+        self.app.get('/ready')(self.serve_ready)
+        self.app.post('/chat')(self.serve_chat)
+        self.app.get('/')(self.serve_root)
 
     @staticmethod
     def loglikelihood(prefix_text, text):
@@ -226,13 +232,31 @@ class LMServer(object):
                 )
         return output
 
+    def serve_root(self):
+        return self.chat_html
+
+    def serve_chat(self):
+        with self.lock:
+            data = request.get_json()
+            context = data['context']
+            prompt = data['prompt']
+            context = (
+                context + self.config.chat_user_prefix
+                + prompt + self.config.chat_user_suffix
+                + self.config.chat_lm_prefix
+            )
+            response = self.generate([context])[0]
+            context = context + response + self.config.chat_lm_suffix
+            output = {'context': context, 'response': response}
+        return output
+
     def serve_ready(self):
         return 'Ready!\n'
 
     def run_server(self):
         if self.config.pre_compile != '':
             if self.config.pre_compile == 'all':
-                pre_compile = ['loglikelihood', 'generate', 'greedy_until']
+                pre_compile = ['loglikelihood', 'generate', 'greedy_until', 'chat']
             else:
                 pre_compile = self.config.pre_compile.split(',')
 
@@ -248,31 +272,13 @@ class LMServer(object):
                         pre_compile_data, pre_compile_data,
                         self.config.greedy_until_max_length
                     )
+                elif task == 'chat':
+                    # Compile a batch 1 generate for chat
+                    self.generate(['a'])
                 else:
                     raise ValueError(f'Invalid precompile task: {task}!')
 
         self.app.run(host=self.config.host, port=self.config.port)
 
-    def run_chat(self):
-        self.generate(['precompile data'])
-        print('Type ">reset" to reset the context.')
-        context = ''
-        while True:
-            prompt = input('>>> ')
-            if prompt == '>reset':
-                context = ''
-                continue
-            context = (
-                context + self.config.chat_user_prefix
-                + prompt + self.config.chat_user_suffix
-                + self.config.chat_lm_prefix
-            )
-            output = self.generate([context])[0]
-            context = context + output + self.config.chat_lm_suffix
-            print(output + '\n')
-
     def run(self):
-        if self.config.chat:
-            self.run_chat()
-        else:
-            self.run_server()
+        self.run_server()
