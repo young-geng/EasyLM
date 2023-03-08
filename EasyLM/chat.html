@@ -27,6 +27,9 @@
                 });
                 $("#submitmsg").click(function () {
                     var clientmsg = $("#usermsg").val();
+                    $("#usermsg").val("Waiting for model response...");
+                    $("#submitmsg").prop("disabled",true);
+                    $("#usermsg").prop("disabled",true);
                     $("#chatbox").append("<div class='msgln'><b class='user-name'>User</b><pre style='white-space: pre-wrap;'>" + clientmsg + "</pre><br></div>");
                     $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
                     $.ajax({
@@ -39,9 +42,11 @@
                             context = data['context'];
                             $("#chatbox").append("<div class='msgln'><b class='user-name-left'>Model</b><pre style='white-space: pre-wrap;'>" + data['response'] + "</pre><br></div>");
                             $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
+                            $("#usermsg").val("");
+                            $("#usermsg").prop("disabled",false);
+                            $("#submitmsg").prop("disabled",false);
                         },
                     });
-                    $("#usermsg").val("");
                     return false;
                 });
             });
@@ -158,6 +163,7 @@
 
         #menu p.welcome {
             flex: 1;
+            font-weight: bold;
         }
 
         a#exit {
