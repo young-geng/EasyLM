@@ -190,6 +190,13 @@ def global_norm(tree):
     return jnp.sqrt(jnp.sum(flattened))
 
 
+def average_metrics(metrics):
+    return jax.tree_map(
+        lambda *args: jnp.mean(jnp.stack(args)),
+        *metrics
+    )
+
+
 def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be

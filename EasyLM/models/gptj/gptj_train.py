@@ -23,7 +23,7 @@ from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    set_random_seed
+    set_random_seed, average_metrics
 )
 from EasyLM.models.gptj.gptj_model import GPTJConfig, FlaxGPTJForCausalLMModule
 
@@ -39,8 +39,10 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     log_freq=50,
     save_model_freq=0,
     save_milestone_freq=0,
+    eval_steps=0,
     tokenizer=GPTJConfig.get_tokenizer_config(),
-    dataset=PretrainDataset.get_default_config(),
+    train_dataset=PretrainDataset.get_default_config(),
+    eval_dataset=PretrainDataset.get_default_config(),
     optimizer=OptimizerFactory.get_default_config(),
     gptj=GPTJConfig.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
@@ -65,7 +67,13 @@ def main(argv):
         dataset = mlxu.load_pickle(FLAGS.load_dataset_state)
     else:
         tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
-        dataset = PretrainDataset.load_dataset(FLAGS.dataset, tokenizer)
+        dataset = PretrainDataset.load_dataset(FLAGS.train_dataset, tokenizer)
+
+    if FLAGS.eval_steps > 0:
+        eval_dataset = PretrainDataset.load_dataset(
+            FLAGS.eval_dataset, dataset.tokenizer
+        )
+        eval_iterator = iter(eval_dataset)
 
     seq_length = dataset.seq_length
 
@@ -130,6 +138,25 @@ def main(argv):
         )
         return train_state, rng_generator(), metrics
 
+    def eval_step(train_state, rng, batch):
+        rng_generator = JaxRNG(rng)
+        tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
+        loss_masks = with_sharding_constraint(batch['loss_masks'], PS('dp'))
+        bos_tokens = jnp.full(
+            (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
+        )
+        inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
+        logits = model.apply(
+            train_state.params, inputs, deterministic=True,
+            rngs=rng_generator(gptj_config.rng_keys()),
+        ).logits
+        loss, accuracy = cross_entropy_loss_and_accuracy(logits, tokens, loss_masks)
+        metrics = dict(
+            eval_loss=loss,
+            eval_accuracy=accuracy,
+        )
+        return rng_generator(), metrics
+
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
         GPTJConfig.get_partition_rules(), train_state_shapes
@@ -151,6 +178,13 @@ def main(argv):
         in_axis_resources=(train_state_partition, PS(), PS()),
         out_axis_resources=(train_state_partition, PS(), PS()),
         donate_argnums=(0, 1),
+    )
+
+    shareded_eval_step = pjit(
+        eval_step,
+        in_axis_resources=(train_state_partition, PS(), PS()),
+        out_axis_resources=(PS(), PS()),
+        donate_argnums=(1,),
     )
 
     def save_checkpoint(train_state, milestone=False):
@@ -218,6 +252,15 @@ def main(argv):
             )
 
             if step % FLAGS.log_freq == 0:
+                if FLAGS.eval_steps > 0:
+                    eval_metric_list = []
+                    for _ in range(FLAGS.eval_steps):
+                        sharded_rng, eval_metrics = shareded_eval_step(
+                            train_state, sharded_rng, next(eval_iterator)
+                        )
+                        eval_metric_list.append(eval_metrics)
+                    metrics.update(average_metrics(eval_metric_list))
+
                 log_metrics = {"step": step}
                 log_metrics.update(metrics)
                 logger.log(log_metrics)
