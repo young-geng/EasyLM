@@ -92,7 +92,7 @@ class LLaMAConfig(PretrainedConfig):
         embd_pdrop=0.0,
         attn_pdrop=0.0,
         tie_word_embeddings=False,
-        gradient_checkpointing: bool = False,
+        gradient_checkpointing=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size

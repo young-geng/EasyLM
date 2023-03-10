@@ -197,6 +197,19 @@ def average_metrics(metrics):
     )
 
 
+def float_to_dtype(tree, dtype=jnp.float32):
+    """ Convert all float(fp16, bf16, fp32, fp64) arrays in a pytree to a given
+        dtype.
+    """
+    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    def to_dtype(x):
+        if isinstance(x, (np.ndarray, jnp.ndarray)):
+            if x.dtype in float_dtypes and x.dtype != dtype:
+                x = x.astype(dtype)
+        return x
+    return jax.tree_util.tree_map(to_dtype, tree)
+
+
 def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be
