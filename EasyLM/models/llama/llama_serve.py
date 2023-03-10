@@ -25,8 +25,7 @@ from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    set_random_seed
+    set_random_seed, get_float_dtype_by_name
 )
 from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
 
@@ -35,7 +34,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim=1,
-    dtype='',
+    dtype='bf16',
     input_length=1024,
     seq_length=2048,
     top_k=50,
@@ -66,13 +65,14 @@ def main(argv):
     with jax.default_device(jax.devices("cpu")[0]):
         llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
+        dtype = get_float_dtype_by_name(FLAGS.dtype)
         if load_type == 'trainstate_params':
             params = flax.core.frozen_dict.freeze(
-                StreamingCheckpointer.load_checkpoint(load_path)['params']
+                StreamingCheckpointer.load_checkpoint(load_path, dtype=dtype)['params']
             )
         elif load_type == 'flax_params':
             params = flax.core.frozen_dict.freeze(
-                {'params': StreamingCheckpointer.load_flax_checkpoint(load_path)}
+                {'params': StreamingCheckpointer.load_flax_checkpoint(load_path, dtype=dtype)}
             )
         else:
             raise ValueError(f'Unsupported load checkpoint type {load_type}')
@@ -84,17 +84,6 @@ def main(argv):
             _do_init=False
         )
         params = jax.device_put(params, device=jax.devices("cpu")[0])
-
-        if FLAGS.dtype == 'fp32':
-            params = hf_model.to_fp32(params)
-        elif FLAGS.dtype == 'fp16':
-            params = hf_model.to_fp16(params)
-        elif FLAGS.dtype == 'bf16':
-            params = hf_model.to_bf16(params)
-        elif FLAGS.dtype == '':
-            pass  # No dtype conversion
-        else:
-            raise ValueError(f'Unsupported dtype: {FLAGS.dtype}')
 
     model_ps = match_partition_rules(
         LLaMAConfig.get_partition_rules(), params

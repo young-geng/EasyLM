@@ -245,9 +245,11 @@ class GPTJConfig(PretrainedConfig):
         )
 
     @staticmethod
-    def load_pretrained(name):
+    def load_pretrained(name, dtype=jnp.float32):
         with jax.default_device(jax.devices("cpu")[0]):
-            params = FlaxGPTJForCausalLM.from_pretrained(name, _do_init=False)[1]
+            params = FlaxGPTJForCausalLM.from_pretrained(
+                name, _do_init=False, dtype=dtype
+            )[1]
             params = freeze({'params': params})
         return params
 

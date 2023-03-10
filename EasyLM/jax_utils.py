@@ -197,11 +197,21 @@ def average_metrics(metrics):
     )
 
 
+def get_float_dtype_by_name(dtype):
+    return {
+        'bf16': jnp.bfloat16,
+        'fp16': jnp.float16,
+        'fp32': jnp.float32,
+        'fp64': jnp.float64,
+    }[dtype]
+
+
 def float_to_dtype(tree, dtype=jnp.float32):
     """ Convert all float(fp16, bf16, fp32, fp64) arrays in a pytree to a given
         dtype.
     """
     float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    assert dtype in float_dtypes, 'dtype must be a float type!'
     def to_dtype(x):
         if isinstance(x, (np.ndarray, jnp.ndarray)):
             if x.dtype in float_dtypes and x.dtype != dtype:
@@ -217,6 +227,7 @@ def inplace_float_to_dtype(tree, dtype=jnp.float32):
     if isinstance(tree, FrozenDict):
         raise ValueError('Only supports nested dicts!')
     float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    assert dtype in float_dtypes, 'dtype must be a float type!'
     for key, val in tree.items():
         if isinstance(val, (np.ndarray, jnp.ndarray)) and val.dtype in float_dtypes:
             if val.dtype != dtype:

@@ -1,6 +1,9 @@
 # EasyLM
-Easy to use model parallel large language models training and evaluation in JAX/Flax with pjit
-support on cloud TPU pods.
+Large language models (LLMs) made easy, EasyLM is a one stop solution for
+pre-training, finetuning, evaluating and serving LLMs in JAX/Flax. EasyLM can
+scale up LLM training to hundreds of TPU/GPU accelerators by leveraging
+JAX's pjit functionality.
+
 
 Building on top of Hugginface's [transformers](https://huggingface.co/docs/transformers/main/en/index)
 and [datasets](https://huggingface.co/docs/datasets/index), this repo provides
