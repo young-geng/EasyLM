@@ -88,9 +88,17 @@ class HuggingfaceDataset(object):
                         mask = 0.0
                     else:
                         mask = 1.0
-                    tokens = self.tokenizer.encode(example[field])
-                    token_buffer.extend(tokens)
-                    loss_mask_buffer.extend([mask for _ in range(len(tokens))])
+
+                    if field == '<|bos|>':
+                        token_buffer.append(self.tokenizer.bos_token_id)
+                        loss_mask_buffer.append(mask)
+                    elif field == '<|eos|>':
+                        token_buffer.append(self.tokenizer.eos_token_id)
+                        loss_mask_buffer.append(mask)
+                    else:
+                        tokens = self.tokenizer.encode(example[field])
+                        token_buffer.extend(tokens)
+                        loss_mask_buffer.extend([mask for _ in range(len(tokens))])
 
                 token_buffer.append(self.tokenizer.eos_token_id)
                 loss_mask_buffer.append(1.0)
@@ -178,11 +186,19 @@ class H5Dataset(object):
                     mask = 0.0
                 else:
                     mask = 1.0
-                tokens = self.tokenizer.encode(
-                    mlxu.array_to_text(h5_file[field][self.index])
-                )
-                token_buffer.extend(tokens)
-                loss_mask_buffer.extend([mask for _ in range(len(tokens))])
+
+                if field == '<|bos|>':
+                    token_buffer.append(self.tokenizer.bos_token_id)
+                    loss_mask_buffer.append(mask)
+                elif field == '<|eos|>':
+                    token_buffer.append(self.tokenizer.eos_token_id)
+                    loss_mask_buffer.append(mask)
+                else:
+                    tokens = self.tokenizer.encode(
+                        mlxu.array_to_text(h5_file[field][self.index])
+                    )
+                    token_buffer.extend(tokens)
+                    loss_mask_buffer.extend([mask for _ in range(len(tokens))])
 
             token_buffer.append(self.tokenizer.eos_token_id)
             loss_mask_buffer.append(1.0)
@@ -270,9 +286,17 @@ class JsonDataset(object):
                     mask = 0.0
                 else:
                     mask = 1.0
-                tokens = self.tokenizer.encode(example[field])
-                token_buffer.extend(tokens)
-                loss_mask_buffer.extend([mask for _ in range(len(tokens))])
+
+                if field == '<|bos|>':
+                    token_buffer.append(self.tokenizer.bos_token_id)
+                    loss_mask_buffer.append(mask)
+                elif field == '<|eos|>':
+                    token_buffer.append(self.tokenizer.eos_token_id)
+                    loss_mask_buffer.append(mask)
+                else:
+                    tokens = self.tokenizer.encode(example[field])
+                    token_buffer.extend(tokens)
+                    loss_mask_buffer.extend([mask for _ in range(len(tokens))])
 
             token_buffer.append(self.tokenizer.eos_token_id)
             loss_mask_buffer.append(1.0)

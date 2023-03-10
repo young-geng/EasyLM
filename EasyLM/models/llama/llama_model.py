@@ -164,8 +164,8 @@ class LLaMAConfig(PretrainedConfig):
         config = ConfigDict()
         config.vocab_file = ''
         config.unk_token = ''
-        config.bos_token = '<|beginoftext|>'
-        config.eos_token = '<|endoftext|>'
+        config.bos_token = ''
+        config.eos_token = '</s>'
         config.add_bos_token = False
         config.add_eos_token = False
 
@@ -187,7 +187,7 @@ class LLaMAConfig(PretrainedConfig):
             padding_side=padding_side,
             truncation_side=truncation_side,
         )
-        tokenizer.pad_token_id = tokenizer.eos_token_id
+        tokenizer.pad_token_id = tokenizer.unk_token_id
         return tokenizer
 
     @classmethod

@@ -15,6 +15,7 @@ EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
 training on Google Cloud TPU Pods.
 
 Currently, the following models are supported:
+* [LLaMA](https://arxiv.org/abs/2302.13971)
 * [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B), with support for
 [Forgetful Causal Masking (FCM)](https://arxiv.org/abs/2210.13432)
 * [OPT](https://arxiv.org/abs/2205.01068)
@@ -118,6 +119,7 @@ python evaluate_easylm.py \
 ```
 
 ## Credits
+* The LLaMA implementation is from [JAX_llama](https://github.com/Sea-Snell/JAX_llama)
 * The JAX/Flax GPT-J and RoBERTa implementation are from [transformers](https://huggingface.co/docs/transformers/main/en/index)
 * Most of the JAX utilities are from [mlxu](https://github.com/young-geng/mlxu)
 * The codebase is heavily inspired by [JAXSeq](https://github.com/Sea-Snell/JAXSeq)
