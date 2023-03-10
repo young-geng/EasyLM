@@ -28,9 +28,7 @@ from EasyLM.jax_utils import (
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed
 )
-from EasyLM.models.gptj.gptj_model import (
-    GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
-)
+from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
@@ -46,9 +44,9 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     temperature=1.0,
     num_beams=1,
     loglikelihood_add_bos_token=False,
-    load_gptj_config='',
+    load_llama_config='',
     load_checkpoint='',
-    tokenizer=GPTJConfig.get_tokenizer_config(),
+    tokenizer=LLaMAConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
 
@@ -58,15 +56,15 @@ def main(argv):
         jax.distributed.initialize()
     set_random_seed(FLAGS.seed)
 
-    prefix_tokenizer = GPTJConfig.get_tokenizer(
+    prefix_tokenizer = LLaMAConfig.get_tokenizer(
         FLAGS.tokenizer, truncation_side='left', padding_side='left'
     )
-    tokenizer = GPTJConfig.get_tokenizer(
+    tokenizer = LLaMAConfig.get_tokenizer(
         FLAGS.tokenizer, truncation_side='right', padding_side='right'
     )
 
     with jax.default_device(jax.devices("cpu")[0]):
-        gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
+        llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
         if load_type == 'trainstate_params':
             params = flax.core.frozen_dict.freeze(
@@ -76,13 +74,11 @@ def main(argv):
             params = flax.core.frozen_dict.freeze(
                 {'params': StreamingCheckpointer.load_flax_checkpoint(load_path)}
             )
-        elif load_type == 'huggingface':
-            params = gptj_config.load_pretrained(load_path)
         else:
             raise ValueError(f'Unsupported load checkpoint type {load_type}')
 
-        hf_model = FlaxGPTJForCausalLM(
-            gptj_config,
+        hf_model = FlaxLLaMAForCausalLM(
+            llama_config,
             input_shape=(1, FLAGS.seq_length),
             seed=FLAGS.seed,
             _do_init=False
@@ -101,7 +97,7 @@ def main(argv):
             raise ValueError(f'Unsupported dtype: {FLAGS.dtype}')
 
     model_ps = match_partition_rules(
-        GPTJConfig.get_partition_rules(), params
+        LLaMAConfig.get_partition_rules(), params
     )
     sharding_helper = ShardingHelper(model_ps)
 
@@ -120,10 +116,10 @@ def main(argv):
 
         logits = hf_model.module.apply(
             params, input_tokens, attention_mask=input_mask,
-            deterministic=True, rngs=rng_generator(gptj_config.rng_keys()),
+            deterministic=True, rngs=rng_generator(llama_config.rng_keys()),
         ).logits
-        if gptj_config.n_real_tokens is not None:
-          logits = logits.at[:, :, gptj_config.n_real_tokens:].set(-1e8)
+        # if llama_config.n_real_tokens is not None:
+        #   logits = logits.at[:, :, llama_config.n_real_tokens:].set(-1e8)
         loglikelihood = -optax.softmax_cross_entropy_with_integer_labels(
             logits, output_tokens
         )

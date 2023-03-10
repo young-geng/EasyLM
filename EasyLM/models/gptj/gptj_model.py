@@ -17,7 +17,7 @@
 
 from functools import partial
 from typing import Optional, Tuple
-import inspect
+import json
 
 import numpy as np
 
@@ -43,7 +43,7 @@ from jax.interpreters import pxla
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from mlxu import function_args_to_config, load_pickle
+from mlxu import function_args_to_config, load_pickle, open_file
 
 
 """
@@ -256,6 +256,10 @@ class GPTJConfig(PretrainedConfig):
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
             return cls.from_dict(load_pickle(load_path)['gptj_config'])
+        elif load_type == 'json':
+            with open_file(load_path, 'r') as fin:
+                raw_config = fin.read()
+            return cls.from_dict(json.loads(raw_config))
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)
         else:

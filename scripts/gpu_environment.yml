@@ -21,6 +21,7 @@ dependencies:
     - cuda-nvcc=11.3
     - cudnn
     - flask
+    - sentencepiece
     - pip:
         - flax==0.6.0
         - optax==0.1.3

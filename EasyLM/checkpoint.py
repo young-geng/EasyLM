@@ -51,6 +51,17 @@ class StreamingCheckpointer(object):
             return train_state
         return flax.serialization.from_state_dict(target, train_state)
 
+    @staticmethod
+    def load_flax_checkpoint(path, target=None):
+        """ Load a standard flax checkpoint that's not saved with the
+            msgpack streaming format.
+        """
+        with mlxu.open_file(path, "rb") as fin:
+            encoded_bytes = fin.read()
+        if target is None:
+            return flax.serialization.msgpack_restore(encoded_bytes)
+        return flax.serialization.from_bytes(target, encoded_bytes)
+
     def _save_pickle_worker(self, obj, filename):
         path = os.path.join(self.checkpoint_dir, filename)
         mlxu.save_pickle(obj, path)

@@ -34,6 +34,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     mp_mesh_dim=1,
     total_steps=10000,
     load_gptj_config='',
+    update_gptj_config='',
     load_checkpoint='',
     load_dataset_state='',
     log_freq=50,
@@ -81,6 +82,9 @@ def main(argv):
         gptj_config = GPTJConfig.load_config(FLAGS.load_gptj_config)
     else:
         gptj_config = GPTJConfig(**FLAGS.gptj)
+
+    if FLAGS.update_gptj_config != '':
+        gptj_config.update(dict(eval(FLAGS.update_gptj_config)))
 
     gptj_config.update(dict(
         bos_token_id=dataset.tokenizer.bos_token_id,
@@ -221,6 +225,10 @@ def main(argv):
             elif load_type == 'trainstate_params':
                 restored_params = flax.core.frozen_dict.freeze(
                     checkpointer.load_checkpoint(load_path)['params']
+                )
+            elif load_type == 'flax_params':
+                restored_params = flax.core.frozen_dict.freeze(
+                    {'params': StreamingCheckpointer.load_flax_checkpoint(load_path)}
                 )
             elif load_type == 'huggingface':
                 restored_params = gptj_config.load_pretrained(load_path)

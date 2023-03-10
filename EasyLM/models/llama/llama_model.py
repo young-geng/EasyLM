@@ -1,26 +1,34 @@
-from transformers.configuration_utils import PretrainedConfig
-from transformers.utils import logging
-from jax.sharding import PartitionSpec as P
 from functools import partial
-from typing import Optional, Tuple, Union
+from shutil import copyfile
+from typing import Any, Dict, List, Optional, Tuple, Union
+import json
+import tempfile
 
-import flax.linen as nn
+import numpy as np
 import jax
 import jax.numpy as jnp
-import numpy as np
+from jax import lax
+from jax.experimental import PartitionSpec
+import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask
 from flax.linen.attention import dot_product_attention_weights
 from flax.traverse_util import flatten_dict, unflatten_dict
-from jax import lax
 from flax.linen import partitioning as nn_partitioning
 
+import sentencepiece as spm
+from transformers.configuration_utils import PretrainedConfig
+from transformers.utils import logging
+from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.modeling_flax_outputs import FlaxBaseModelOutput, FlaxCausalLMOutput
 from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append_call_sample_docstring
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
 
-from jax_llama.config import LLaMAConfig
-import math
+from ml_collections import ConfigDict
+from ml_collections.config_dict import config_dict
+from mlxu import function_args_to_config, load_pickle, open_file
+
+
 
 class LLaMAConfig(PretrainedConfig):
     r"""
@@ -84,7 +92,7 @@ class LLaMAConfig(PretrainedConfig):
         embd_pdrop=0.0,
         attn_pdrop=0.0,
         tie_word_embeddings=False,
-        gradient_checkpointing: bool = False, 
+        gradient_checkpointing: bool = False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -105,32 +113,100 @@ class LLaMAConfig(PretrainedConfig):
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             tie_word_embeddings=tie_word_embeddings,
-            **kwargs, 
+            **kwargs,
         )
+
+    @classmethod
+    def get_default_config(cls, updates=None):
+        config = function_args_to_config(cls.__init__)
+
+        if updates is not None:
+            config.update(ConfigDict(updates).copy_and_resolve_references())
+
+        return config
 
     @staticmethod
     def get_partition_rules():
+        """ Parition rules for GPTJ. Note that these rules are orderd, so that
+            the beginning rules match first. It is important to use
+            PartitionSpec() instead of None here because JAX does not treat
+            None as a pytree leaf.
+        """
         return [
             # embeddings
-            (("transformer/wte/embedding"), P(None, "mp")),
+            (("transformer/wte/embedding"), PartitionSpec(None, "mp")),
             # atention
-            (("attention/(wq|wk|wv)/kernel"), P(None, "mp")),
-            (("attention/wo/kernel"), P("mp", None)),
+            (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, "mp")),
+            (("attention/wo/kernel"), PartitionSpec("mp", None)),
             # mlp
-            (("feed_forward/w1/kernel"), P(None, "mp")),
-            (("feed_forward/w2/kernel"), P("mp", None)),
-            (("feed_forward/w3/kernel"), P(None, "mp")),
+            (("feed_forward/w1/kernel"), PartitionSpec(None, "mp")),
+            (("feed_forward/w2/kernel"), PartitionSpec("mp", None)),
+            (("feed_forward/w3/kernel"), PartitionSpec(None, "mp")),
             # layer norms
-            (("attention_norm/kernel"), P(None)),
-            (("ffn_norm/kernel"), P(None)),
+            (("attention_norm/kernel"), PartitionSpec(None)),
+            (("ffn_norm/kernel"), PartitionSpec(None)),
             # output head
-            (("transformer/ln_f/kernel"), P(None)),
-            (("lm_head/kernel"), P(None, "mp")),
+            (("transformer/ln_f/kernel"), PartitionSpec(None)),
+            (("lm_head/kernel"), PartitionSpec(None, "mp")),
+            ('.*', PartitionSpec(None)),
         ]
+
+    @staticmethod
+    def get_weight_decay_exclusions():
+        return tuple()
+
+    @staticmethod
+    def rng_keys():
+        return ('params', 'dropout', 'fcm')
+
+    @staticmethod
+    def get_tokenizer_config(updates=None):
+        config = ConfigDict()
+        config.vocab_file = ''
+        config.unk_token = ''
+        config.bos_token = '<|beginoftext|>'
+        config.eos_token = '<|endoftext|>'
+        config.add_bos_token = False
+        config.add_eos_token = False
+
+        if updates is not None:
+            config.update(ConfigDict(updates).copy_and_resolve_references())
+        return config
+
+    @classmethod
+    def get_tokenizer(cls, config, padding_side='left', truncation_side='right'):
+        config = cls.get_tokenizer_config(config)
+        assert config.vocab_file != '', 'vocab_file must be specified'
+        tokenizer = LLaMATokenizer(
+            vocab_file=config.vocab_file,
+            unk_token=config.unk_token,
+            bos_token=config.bos_token,
+            eos_token=config.eos_token,
+            add_bos_token=config.add_bos_token,
+            add_eos_token=config.add_eos_token,
+            padding_side=padding_side,
+            truncation_side=truncation_side,
+        )
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+        return tokenizer
+
+    @classmethod
+    def load_config(cls, path):
+        load_type, load_path = path.split('::', 1)
+        if load_type == 'pickle':
+            return cls.from_dict(load_pickle(load_path)['gptj_config'])
+        elif load_type == 'json':
+            with open_file(load_path, 'r') as fin:
+                raw_config = fin.read()
+            return cls.from_dict(json.loads(raw_config))
+        else:
+            raise ValueError(f'Unsupported load config type: {load_type}')
+
 
 remat = nn_partitioning.remat
 
 logger = logging.get_logger(__name__)
+
 
 class RMSNorm(nn.Module):
     dim: int
@@ -140,10 +216,10 @@ class RMSNorm(nn.Module):
 
     def setup(self) -> None:
         self.weight = self.param(
-            'kernel', 
-            nn.initializers.ones, 
-            (self.dim,), 
-            self.param_dtype, 
+            'kernel',
+            nn.initializers.ones,
+            (self.dim,),
+            self.param_dtype,
         )
 
     def _norm(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -163,28 +239,29 @@ def precompute_freqs_cis(dim: int, end: int, theta: float=10000.0, dtype: jnp.dt
     return jnp.asarray(freqs_cis)
 
 def apply_rotary_emb(
-    xq: jnp.ndarray, 
-    xk: jnp.ndarray, 
-    freqs_cis: jnp.ndarray, 
-    dtype: jnp.dtype=jnp.float32, 
+    xq: jnp.ndarray,
+    xk: jnp.ndarray,
+    freqs_cis: jnp.ndarray,
+    dtype: jnp.dtype=jnp.float32,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    
-    reshape_xq = xq.astype(dtype).reshape(*xq.shape[:-1], -1, 2)
-    reshape_xk = xk.astype(dtype).reshape(*xk.shape[:-1], -1, 2)
-    
+
+    reshape_xq = xq.astype(jnp.float32).reshape(*xq.shape[:-1], -1, 2)
+    reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
+
     xq_ = jax.lax.complex(reshape_xq[..., 0], reshape_xq[..., 1])
     xk_ = jax.lax.complex(reshape_xk[..., 0], reshape_xk[..., 1])
 
     # add head dim
     freqs_cis = jnp.reshape(freqs_cis, (*freqs_cis.shape[:2], 1, *freqs_cis.shape[2:]))
-    
+
     xq_out = xq_ * freqs_cis
     xq_out = jnp.stack((jnp.real(xq_out), jnp.imag(xq_out)), axis=-1).reshape(*xq_out.shape[:-1], -1)
 
     xk_out = xk_ * freqs_cis
     xk_out = jnp.stack((jnp.real(xk_out), jnp.imag(xk_out)), axis=-1).reshape(*xk_out.shape[:-1], -1)
 
-    return xq_out.astype(xq.dtype), xk_out.astype(xk.dtype)
+    return xq_out.astype(dtype), xk_out.astype(dtype)
+
 
 class FlaxLLaMAAttention(nn.Module):
     config: LLaMAConfig
@@ -199,36 +276,36 @@ class FlaxLLaMAAttention(nn.Module):
         self.head_dim = self.embed_dim // self.num_heads
 
         self.wq = nn.Dense(
-            config.num_attention_heads*self.head_dim, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.num_attention_heads*self.head_dim,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.wk = nn.Dense(
-            config.num_attention_heads*self.head_dim, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.num_attention_heads*self.head_dim,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.wv = nn.Dense(
-            config.num_attention_heads*self.head_dim, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.num_attention_heads*self.head_dim,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.wo = nn.Dense(
-            config.hidden_size, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.hidden_size,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
 
         self.resid_dropout = nn.Dropout(rate=config.resid_pdrop)
@@ -236,11 +313,11 @@ class FlaxLLaMAAttention(nn.Module):
         self.causal_mask = make_causal_mask(jnp.ones((1, config.max_sequence_length), dtype="bool"), dtype="bool")
 
         self.freqs_cis = precompute_freqs_cis(
-            self.head_dim, 
-            config.max_sequence_length * 2, 
-            dtype=self.dtype, 
+            self.head_dim,
+            config.max_sequence_length * 2,
+            dtype=self.dtype,
         )
-    
+
     def _split_heads(self, hidden_states):
         return hidden_states.reshape(hidden_states.shape[:2] + (self.num_heads, self.head_dim))
 
@@ -299,7 +376,7 @@ class FlaxLLaMAAttention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
-        
+
         if self.has_variable("cache", "cached_key"):
             mask_shift = self.variables["cache"]["cache_index"]
             max_decoder_length = self.variables["cache"]["cached_key"].shape[1]
@@ -308,7 +385,7 @@ class FlaxLLaMAAttention(nn.Module):
             )
         else:
             causal_mask = self.causal_mask[:, :, :query_length, :key_length]
-        
+
         batch_size = hidden_states.shape[0]
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
 
@@ -318,12 +395,12 @@ class FlaxLLaMAAttention(nn.Module):
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
             dropout_rng = self.make_rng("dropout")
-        
+
         # During fast autoregressive decoding, we feed one position at a time,
         # and cache the keys and values step by step.
         if self.has_variable("cache", "cached_key") or init_cache:
             xk, xv, attention_mask = self._concatenate_to_cache(xk, xv, xq, attention_mask)
-        
+
         # transform boolean mask into float mask
         attention_bias = lax.select(
             attention_mask > 0,
@@ -333,24 +410,25 @@ class FlaxLLaMAAttention(nn.Module):
 
         # usual dot product attention
         attn_weights = dot_product_attention_weights(
-            xq, 
-            xk, 
-            bias=attention_bias, 
-            dropout_rng=dropout_rng, 
-            dropout_rate=self.config.attn_pdrop, 
-            deterministic=deterministic, 
-            dtype=self.dtype, 
-            precision=self.precision, 
+            xq,
+            xk,
+            bias=attention_bias,
+            dropout_rng=dropout_rng,
+            dropout_rate=self.config.attn_pdrop,
+            deterministic=deterministic,
+            dtype=self.dtype,
+            precision=self.precision,
         )
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
         attn_output = self._merge_heads(attn_output)
         attn_output = self.wo(attn_output)
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-        
+
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
         return outputs
-        
+
+
 class FlaxLLaMAMLP(nn.Module):
     config: LLaMAConfig
     dtype: jnp.dtype=jnp.float32
@@ -361,28 +439,28 @@ class FlaxLLaMAMLP(nn.Module):
         config = self.config
 
         self.w1 = nn.Dense(
-            config.intermediate_size, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.intermediate_size,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.w2 = nn.Dense(
-            config.hidden_size, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.hidden_size,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.w3 = nn.Dense(
-            config.intermediate_size, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range), 
-            precision=self.precision, 
+            config.intermediate_size,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            precision=self.precision,
         )
         self.dropout = nn.Dropout(rate=self.config.resid_pdrop)
 
@@ -390,6 +468,7 @@ class FlaxLLaMAMLP(nn.Module):
         x = self.w2(nn.silu(self.w1(x)) * self.w3(x))
         x = self.dropout(x, deterministic=deterministic)
         return x
+
 
 class FlaxLLaMABlock(nn.Module):
     config: LLaMAConfig
@@ -399,30 +478,30 @@ class FlaxLLaMABlock(nn.Module):
 
     def setup(self) -> None:
         self.attention = FlaxLLaMAAttention(
-            self.config, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            precision=self.precision, 
+            self.config,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            precision=self.precision,
         )
         self.feed_forward = FlaxLLaMAMLP(
-            self.config, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            precision=self.precision, 
+            self.config,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            precision=self.precision,
         )
         self.attention_norm = RMSNorm(
-            self.config.hidden_size, 
-            eps=self.config.rms_norm_eps, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
+            self.config.hidden_size,
+            eps=self.config.rms_norm_eps,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
         )
         self.ffn_norm = RMSNorm(
-            self.config.hidden_size, 
-            eps=self.config.rms_norm_eps, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
+            self.config.hidden_size,
+            eps=self.config.rms_norm_eps,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
         )
-    
+
     def __call__(
         self,
         hidden_states,
@@ -433,23 +512,24 @@ class FlaxLLaMABlock(nn.Module):
         output_attentions: bool = False,
     ):
         attn_outputs = self.attention(
-            self.attention_norm(hidden_states), 
-            attention_mask=attention_mask, 
-            position_ids=position_ids, 
-            deterministic=deterministic, 
-            init_cache=init_cache, 
-            output_attentions=output_attentions, 
+            self.attention_norm(hidden_states),
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            deterministic=deterministic,
+            init_cache=init_cache,
+            output_attentions=output_attentions,
         )
         attn_output = attn_outputs[0]
         hidden_states = hidden_states + attn_output
 
         feed_forward_hidden_states = self.feed_forward(
-            self.ffn_norm(hidden_states), 
-            deterministic=deterministic, 
+            self.ffn_norm(hidden_states),
+            deterministic=deterministic,
         )
         hidden_states = hidden_states + feed_forward_hidden_states
 
         return (hidden_states,) + attn_outputs[1:]
+
 
 class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
     """
@@ -597,6 +677,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
 
         return outputs
 
+
 class FlaxLLaMABlockCollection(nn.Module):
     config: LLaMAConfig
     dtype: jnp.dtype = jnp.float32
@@ -631,12 +712,12 @@ class FlaxLLaMABlockCollection(nn.Module):
                 all_hidden_states += (hidden_states,)
 
             layer_outputs = block(
-                hidden_states, 
-                attention_mask, 
-                position_ids, 
-                deterministic, 
-                init_cache, 
-                output_attentions, 
+                hidden_states,
+                attention_mask,
+                position_ids,
+                deterministic,
+                init_cache,
+                output_attentions,
             )
             hidden_states = layer_outputs[0]
 
@@ -647,6 +728,7 @@ class FlaxLLaMABlockCollection(nn.Module):
         outputs = (hidden_states, all_hidden_states, all_attentions)
 
         return outputs
+
 
 class FlaxLLaMAModule(nn.Module):
     config: LLaMAConfig
@@ -661,8 +743,8 @@ class FlaxLLaMAModule(nn.Module):
             self.config.vocab_size,
             self.config.hidden_size,
             embedding_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
         )
         self.dropout = nn.Dropout(rate=self.config.embd_pdrop)
         self.h = FlaxLLaMABlockCollection(self.config, dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision)
@@ -733,25 +815,33 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
     def setup(self):
         self.transformer = FlaxLLaMAModule(self.config, dtype=self.dtype)
         self.lm_head = nn.Dense(
-            self.config.vocab_size, 
-            dtype=self.dtype, 
-            param_dtype=self.param_dtype, 
-            use_bias=False, 
-            kernel_init=jax.nn.initializers.normal(stddev=self.config.initializer_range), 
-            precision=self.precision, 
+            self.config.vocab_size,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            use_bias=False,
+            kernel_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
+            precision=self.precision,
         )
 
     def __call__(
         self,
         input_ids,
-        attention_mask,
-        position_ids,
+        attention_mask=None,
+        position_ids=None,
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
     ):
+        batch_size, seq_length = input_ids.shape
+        if attention_mask is None:
+            attention_mask = jnp.ones_like(input_ids)
+        if position_ids is None:
+            position_ids = jnp.broadcast_to(
+                jnp.clip(jnp.cumsum(attention_mask, axis=-1) - 1, a_min=0),
+                (batch_size, seq_length)
+            )
         outputs = self.transformer(
             input_ids,
             attention_mask,
@@ -815,3 +905,184 @@ class FlaxLLaMAForCausalLM(FlaxLLaMAPreTrainedModel):
 #     _CONFIG_FOR_DOC,
 # )
 
+
+
+VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
+
+PRETRAINED_VOCAB_FILES_MAP = {}
+
+
+class LLaMATokenizer(PreTrainedTokenizer):
+    """
+    Construct a LLaMA tokenizer. Based on byte-level Byte-Pair-Encoding.
+    Args:
+        vocab_file (`str`):
+            Path to the vocabulary file.
+    """
+
+    vocab_files_names = VOCAB_FILES_NAMES
+    pretrained_vocab_files_map = PRETRAINED_VOCAB_FILES_MAP
+    model_input_names = ["input_ids", "attention_mask"]
+
+    def __init__(
+        self,
+        vocab_file,
+        unk_token="",
+        bos_token="",
+        eos_token="",
+        sp_model_kwargs: Optional[Dict[str, Any]] = None,
+        add_bos_token=True,
+        add_eos_token=False,
+        **kwargs,
+    ):
+        self.sp_model_kwargs = {} if sp_model_kwargs is None else sp_model_kwargs
+        super().__init__(bos_token=bos_token, eos_token=eos_token, unk_token=unk_token, **kwargs)
+        self.vocab_file = vocab_file
+        self.add_bos_token = add_bos_token
+        self.add_eos_token = add_eos_token
+        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
+
+        with tempfile.NamedTemporaryFile() as tfile:
+            with open_file(self.vocab_file, 'rb') as fin:
+                tfile.write(fin.read())
+                tfile.flush()
+                tfile.seek(0)
+            self.sp_model.Load(tfile.name)
+        """ Initialisation"""
+
+    @property
+    def vocab_size(self):
+        """Returns vocab size"""
+        return self.sp_model.get_piece_size()
+
+    @property
+    def bos_token_id(self) -> Optional[int]:
+        return self.sp_model.bos_id()
+
+    @property
+    def eos_token_id(self) -> Optional[int]:
+        return self.sp_model.eos_id()
+
+    def get_vocab(self):
+        """Returns vocab as a dict"""
+        vocab = {self.convert_ids_to_tokens(i): i for i in range(self.vocab_size)}
+        vocab.update(self.added_tokens_encoder)
+        return vocab
+
+    def _tokenize(self, text):
+        """Returns a tokenized string."""
+        return self.sp_model.encode(text, out_type=str)
+
+    def _convert_token_to_id(self, token):
+        """Converts a token (str) in an id using the vocab."""
+        return self.sp_model.piece_to_id(token)
+
+    def _convert_id_to_token(self, index):
+        """Converts an index (integer) in a token (str) using the vocab."""
+        token = self.sp_model.IdToPiece(index)
+        return token
+
+    def convert_tokens_to_string(self, tokens):
+        """Converts a sequence of tokens (string) in a single string."""
+        current_sub_tokens = []
+        out_string = ""
+        prev_is_special = False
+        for token in tokens:
+            # make sure that special tokens are not decoded using sentencepiece model
+            if token in self.all_special_tokens:
+                if not prev_is_special:
+                    out_string += " "
+                out_string += self.sp_model.decode(current_sub_tokens) + token
+                prev_is_special = True
+                current_sub_tokens = []
+            else:
+                current_sub_tokens.append(token)
+                prev_is_special = False
+        out_string += self.sp_model.decode(current_sub_tokens)
+        return out_string.strip()
+
+    def save_vocabulary(self, save_directory, filename_prefix: Optional[str] = None) -> Tuple[str]:
+        """
+        Save the vocabulary and special tokens file to a directory.
+        Args:
+            save_directory (`str`):
+                The directory in which to save the vocabulary.
+        Returns:
+            `Tuple(str)`: Paths to the files saved.
+        """
+        if not os.path.isdir(save_directory):
+            logger.error(f"Vocabulary path ({save_directory}) should be a directory")
+            return
+        out_vocab_file = os.path.join(
+            save_directory, (filename_prefix + "-" if filename_prefix else "") + VOCAB_FILES_NAMES["vocab_file"]
+        )
+
+        if os.path.abspath(self.vocab_file) != os.path.abspath(out_vocab_file) and os.path.isfile(self.vocab_file):
+            copyfile(self.vocab_file, out_vocab_file)
+        elif not os.path.isfile(self.vocab_file):
+            with open(out_vocab_file, "wb") as fi:
+                content_spiece_model = self.sp_model.serialized_model_proto()
+                fi.write(content_spiece_model)
+
+        return (out_vocab_file,)
+
+    def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
+        if self.add_bos_token:
+            bos_token_ids = [self.bos_token_id]
+        else:
+            bos_token_ids = []
+
+        output = bos_token_ids + token_ids_0
+
+        if token_ids_1 is not None:
+            output = output + token_ids_1
+
+        if self.add_eos_token:
+            output = output + [self.eos_token_id]
+
+        return output
+
+    def get_special_tokens_mask(
+        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None, already_has_special_tokens: bool = False
+    ) -> List[int]:
+        """
+        Retrieve sequence ids from a token list that has no special tokens added. This method is called when adding
+        special tokens using the tokenizer `prepare_for_model` method.
+        Args:
+            token_ids_0 (`List[int]`):
+                List of IDs.
+            token_ids_1 (`List[int]`, *optional*):
+                Optional second list of IDs for sequence pairs.
+            already_has_special_tokens (`bool`, *optional*, defaults to `False`):
+                Whether or not the token list is already formatted with special tokens for the model.
+        Returns:
+            `List[int]`: A list of integers in the range [0, 1]: 1 for a special token, 0 for a sequence token.
+        """
+        if already_has_special_tokens:
+            return super().get_special_tokens_mask(
+                token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
+            )
+
+        if token_ids_1 is None:
+            return [1] + ([0] * len(token_ids_0)) + [1]
+        return [1] + ([0] * len(token_ids_0)) + [1, 1] + ([0] * len(token_ids_1)) + [1]
+
+    def create_token_type_ids_from_sequences(
+        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+    ) -> List[int]:
+        """
+        Create a mask from the two sequences passed to be used in a sequence-pair classification task. T5 does not make
+        use of token type ids, therefore a list of zeros is returned.
+        Args:
+            token_ids_0 (`List[int]`):
+                List of IDs.
+            token_ids_1 (`List[int]`, *optional*):
+                Optional second list of IDs for sequence pairs.
+        Returns:
+            `List[int]`: List of zeros.
+        """
+        eos = [self.eos_token_id]
+
+        if token_ids_1 is None:
+            return len(token_ids_0 + eos) * [0]
+        return len(token_ids_0 + eos + token_ids_1 + eos) * [0]
