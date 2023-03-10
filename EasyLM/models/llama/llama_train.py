@@ -23,7 +23,7 @@ from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    set_random_seed, average_metrics, float_to_dtype
+    set_random_seed, average_metrics
 )
 from EasyLM.models.llama.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
@@ -230,10 +230,7 @@ def main(argv):
                 )
             elif load_type == 'flax_params':
                 restored_params = flax.core.frozen_dict.freeze(
-                    float_to_dtype(
-                        {'params': checkpointer.load_flax_checkpoint(load_path)},
-                        dtype=jnp.float32
-                    )
+                    {'params': checkpointer.load_flax_checkpoint(load_path, dtype=jnp.float32)}
                 )
             else:
                 raise ValueError(f'Unknown load type: {load_type}')

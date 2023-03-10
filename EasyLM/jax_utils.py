@@ -210,6 +210,23 @@ def float_to_dtype(tree, dtype=jnp.float32):
     return jax.tree_util.tree_map(to_dtype, tree)
 
 
+def inplace_float_to_dtype(tree, dtype=jnp.float32):
+    """ Convert all float(fp16, bf16, fp32, fp64) arrays in a pytree to a given
+        dtype inplace. Only supports nested dicts.
+    """
+    if isinstance(tree, FrozenDict):
+        raise ValueError('Only supports nested dicts!')
+    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    for key, val in tree.items():
+        if isinstance(val, (np.ndarray, jnp.ndarray)) and val.dtype in float_dtypes:
+            if val.dtype != dtype:
+                tree[key] = val.astype(dtype)
+        elif isinstance(val, dict):
+            inplace_float_to_dtype(val, dtype)
+        elif isinstance(val, FrozenDict):
+            raise ValueError('Only supports nested dicts!')
+
+
 def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be

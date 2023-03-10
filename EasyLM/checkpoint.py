@@ -8,6 +8,8 @@ import flax
 from flax.serialization import from_bytes, to_bytes
 import msgpack
 
+from EasyLM.jax_utils import inplace_float_to_dtype
+
 
 class StreamingCheckpointer(object):
     """ Custom msgpack checkpointer that saves large train states by serializing
@@ -38,7 +40,7 @@ class StreamingCheckpointer(object):
             )
 
     @staticmethod
-    def load_checkpoint(path, target=None):
+    def load_checkpoint(path, target=None, dtype=None):
         flattend_train_state = {}
         with mlxu.open_file(path) as fin:
             # 83886080 bytes = 80 MB, which is 16 blocks on GCS
@@ -46,21 +48,28 @@ class StreamingCheckpointer(object):
             for key, value in unpacker:
                 flattend_train_state[tuple(key)] = from_bytes(None, value)
 
+        if dtype is not None:
+            inplace_float_to_dtype(flattend_train_state, dtype)
+
         train_state = flax.traverse_util.unflatten_dict(flattend_train_state)
         if target is None:
             return train_state
         return flax.serialization.from_state_dict(target, train_state)
 
     @staticmethod
-    def load_flax_checkpoint(path, target=None):
+    def load_flax_checkpoint(path, target=None, dtype=None):
         """ Load a standard flax checkpoint that's not saved with the
             msgpack streaming format.
         """
         with mlxu.open_file(path, "rb") as fin:
             encoded_bytes = fin.read()
+
+        state_dict = flax.serialization.msgpack_restore(encoded_bytes)
+        if dtype is not None:
+            inplace_float_to_dtype(state_dict, dtype)
         if target is None:
-            return flax.serialization.msgpack_restore(encoded_bytes)
-        return flax.serialization.from_bytes(target, encoded_bytes)
+            return state_dict
+        return flax.serialization.from_state_dict(target, state_dict)
 
     def _save_pickle_worker(self, obj, filename):
         path = os.path.join(self.checkpoint_dir, filename)
