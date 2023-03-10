@@ -1,4 +1,4 @@
-from functools import partial
+import os
 from shutil import copyfile
 from typing import Any, Dict, List, Optional, Tuple, Union
 import json
@@ -28,6 +28,57 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
+
+LLAMA_STANDARD_CONFIGS = {
+    '7b': {
+        'vocab_size': 32000,
+        'hidden_size': 4096,
+        'intermediate_size': 11008,
+        'num_hidden_layers': 32,
+        'num_attention_heads': 32,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-6,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
+    '13b': {
+        'vocab_size': 32000,
+        'hidden_size': 5120,
+        'intermediate_size': 13824,
+        'num_hidden_layers': 40,
+        'num_attention_heads': 40,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-6,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
+    '30b': {
+        'vocab_size': 32000,
+        'hidden_size': 6656,
+        'intermediate_size': 17920,
+        'num_hidden_layers': 60,
+        'num_attention_heads': 52,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-6,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
+    '65b': {
+        'vocab_size': 32000,
+        'hidden_size': 8192,
+        'intermediate_size': 22016,
+        'num_hidden_layers': 80,
+        'num_attention_heads': 64,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-5,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
+}
 
 
 class LLaMAConfig(PretrainedConfig):
@@ -192,6 +243,8 @@ class LLaMAConfig(PretrainedConfig):
 
     @classmethod
     def load_config(cls, path):
+        if path in LLAMA_STANDARD_CONFIGS:
+            return cls.from_dict(LLAMA_STANDARD_CONFIGS[path])
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
             return cls.from_dict(load_pickle(load_path)['gptj_config'])
