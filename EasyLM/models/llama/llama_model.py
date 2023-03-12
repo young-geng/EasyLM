@@ -9,6 +9,8 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from jax.experimental import PartitionSpec
+from jax.experimental.pjit import with_sharding_constraint
+from jax.interpreters import pxla
 import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask
@@ -185,7 +187,7 @@ class LLaMAConfig(PretrainedConfig):
         """
         return [
             # embeddings
-            (("transformer/wte/embedding"), PartitionSpec(None, "mp")),
+            (("transformer/wte/embedding"), PartitionSpec("mp", None)),
             # atention
             (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, "mp")),
             (("attention/wo/kernel"), PartitionSpec("mp", None)),
@@ -426,6 +428,11 @@ class FlaxLLaMAAttention(nn.Module):
 
         freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
 
+        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
+            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, None, "mp"))
+            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, None, "mp"))
+
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
         query_length, key_length = xq.shape[1], xk.shape[1]
@@ -472,6 +479,12 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
+
+        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
+            attn_weights = with_sharding_constraint(
+                attn_weights, PartitionSpec("dp", None, None, "mp")
+            )
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
         attn_output = self._merge_heads(attn_output)
