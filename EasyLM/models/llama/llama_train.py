@@ -23,7 +23,7 @@ from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    set_random_seed, average_metrics
+    set_random_seed, average_metrics, get_weight_decay_mask
 )
 from EasyLM.models.llama.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
@@ -96,16 +96,9 @@ def main(argv):
         llama_config.update(dict(vocab_size=dataset.vocab_size))
     model = FlaxLLaMAForCausalLMModule(llama_config)
 
-    def weight_decay_mask(params):
-        def decay(name, _):
-            for rule in LLaMAConfig.get_weight_decay_exclusions():
-                if re.search(rule, name) is not None:
-                    return False
-            return True
-        return named_tree_map(decay, params, sep='/')
-
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(
-        FLAGS.optimizer, weight_decay_mask
+        FLAGS.optimizer,
+        get_weight_decay_mask(LLaMAConfig.get_weight_decay_exclusions())
     )
 
     def init_fn(rng):

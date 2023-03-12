@@ -311,3 +311,19 @@ def match_partition_rules(rules, params):
                 return ps
         raise ValueError(f'Partition rule not found for param: {name}')
     return named_tree_map(get_partition_spec, params, sep='/')
+
+
+def get_weight_decay_mask(exclusions):
+    """ Return a weight decay mask function that computes the pytree masks
+        according to the given exclusion rules.
+    """
+    def decay(name, _):
+        for rule in exclusions:
+            if re.search(rule, name) is not None:
+                return False
+        return True
+
+    def weight_decay_mask(params):
+        return named_tree_map(decay, params, sep='/')
+
+    return weight_decay_mask

@@ -216,9 +216,9 @@ class LLaMAConfig(PretrainedConfig):
     def get_tokenizer_config(updates=None):
         config = ConfigDict()
         config.vocab_file = ''
-        config.unk_token = ''
-        config.bos_token = ''
-        config.eos_token = '</s>'
+        config.unk_token = '<|unk|>'
+        config.bos_token = '<|bos|>'
+        config.eos_token = '<|eos|>'
         config.add_bos_token = False
         config.add_eos_token = False
 
@@ -993,11 +993,11 @@ class LLaMATokenizer(PreTrainedTokenizer):
     def __init__(
         self,
         vocab_file,
-        unk_token="",
-        bos_token="",
-        eos_token="",
+        unk_token="<|unk|>",
+        bos_token="<|bos|>",
+        eos_token="<|eos|>",
         sp_model_kwargs: Optional[Dict[str, Any]] = None,
-        add_bos_token=True,
+        add_bos_token=False,
         add_eos_token=False,
         **kwargs,
     ):
