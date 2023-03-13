@@ -53,8 +53,8 @@ class HuggingfaceDataset(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.seq_length = 1024
-        config.path = 'c4'
-        config.name = 'realnewslike'
+        config.path = 'Thewillonline/reddit-v1-all'
+        config.name = 'reddit-v1-all'
         config.split = 'train'
         config.field = 'text'
         config.streaming = True

@@ -31,9 +31,9 @@ from EasyLM.models.gptj.gptj_model import GPTJConfig, FlaxGPTJForCausalLMModule
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
-    initialize_jax_distributed=False,
+    initialize_jax_distributed=True,
     mp_mesh_dim=-1,
-    total_steps=10000,
+    total_steps=52534,
     load_gptj_config='',
     update_gptj_config='',
     load_checkpoint='',
@@ -43,7 +43,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     save_milestone_freq=0,
     save_optimizer_state=False,
     eval_steps=0,
-    tokenizer=GPTJConfig.get_tokenizer_config(),
+    tokenizer=GPTJConfig.get_tokenizer_config(), 
     train_dataset=PretrainDataset.get_default_config(),
     eval_dataset=PretrainDataset.get_default_config(),
     optimizer=OptimizerFactory.get_default_config(),
