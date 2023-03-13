@@ -216,9 +216,6 @@ class LLaMAConfig(PretrainedConfig):
     def get_tokenizer_config(updates=None):
         config = ConfigDict()
         config.vocab_file = ''
-        config.unk_token = '<|unk|>'
-        config.bos_token = '<|bos|>'
-        config.eos_token = '<|eos|>'
         config.add_bos_token = False
         config.add_eos_token = False
 
@@ -232,15 +229,11 @@ class LLaMAConfig(PretrainedConfig):
         assert config.vocab_file != '', 'vocab_file must be specified'
         tokenizer = LLaMATokenizer(
             vocab_file=config.vocab_file,
-            unk_token=config.unk_token,
-            bos_token=config.bos_token,
-            eos_token=config.eos_token,
             add_bos_token=config.add_bos_token,
             add_eos_token=config.add_eos_token,
             padding_side=padding_side,
             truncation_side=truncation_side,
         )
-        tokenizer.pad_token_id = tokenizer.unk_token_id
         return tokenizer
 
     @classmethod
@@ -993,9 +986,9 @@ class LLaMATokenizer(PreTrainedTokenizer):
     def __init__(
         self,
         vocab_file,
-        unk_token="<|unk|>",
-        bos_token="<|bos|>",
-        eos_token="<|eos|>",
+        unk_token="<unk>",
+        bos_token="<s>",
+        eos_token="</s>",
         sp_model_kwargs: Optional[Dict[str, Any]] = None,
         add_bos_token=False,
         add_eos_token=False,
@@ -1015,6 +1008,12 @@ class LLaMATokenizer(PreTrainedTokenizer):
                 tfile.seek(0)
             self.sp_model.Load(tfile.name)
         """ Initialisation"""
+        self.add_special_tokens(dict(
+            unk_token=unk_token,
+            bos_token=bos_token,
+            eos_token=eos_token,
+        ))
+        self.pad_token_id = self.unk_token_id
 
     @property
     def vocab_size(self):
