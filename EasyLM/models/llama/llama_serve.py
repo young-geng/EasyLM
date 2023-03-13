@@ -24,8 +24,8 @@ import optax
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
-    JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
-    set_random_seed, get_float_dtype_by_name
+    JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules, tree_apply,
+    set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns
 )
 from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
 
@@ -65,17 +65,10 @@ def main(argv):
     with jax.default_device(jax.devices("cpu")[0]):
         llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
         load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
-        dtype = get_float_dtype_by_name(FLAGS.dtype)
-        if load_type == 'trainstate_params':
-            params = flax.core.frozen_dict.freeze(
-                StreamingCheckpointer.load_checkpoint(load_path, dtype=dtype)['params']
-            )
-        elif load_type == 'flax_params':
-            params = flax.core.frozen_dict.freeze(
-                {'params': StreamingCheckpointer.load_flax_checkpoint(load_path, dtype=dtype)}
-            )
-        else:
-            raise ValueError(f'Unsupported load checkpoint type {load_type}')
+        assert load_type != 'trainstate'
+        _, params = StreamingCheckpointer.load_trainstate_checkpoint(
+            FLAGS.load_checkpoint
+        )
 
         hf_model = FlaxLLaMAForCausalLM(
             llama_config,
@@ -88,7 +81,9 @@ def main(argv):
     model_ps = match_partition_rules(
         LLaMAConfig.get_partition_rules(), params
     )
-    sharding_helper = ShardingHelper(model_ps)
+    shard_fns, _ = make_shard_and_gather_fns(
+        model_ps, get_float_dtype_by_name(FLAGS.dtype)
+    )
 
     @partial(
         pjit,
@@ -171,7 +166,7 @@ def main(argv):
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
-        params = sharding_helper.put(params)
+        params = tree_apply(shard_fns, params)
         sharded_rng = next_rng()
 
     class GPTJServer(LMServer):

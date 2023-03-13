@@ -1,63 +1,112 @@
 import os
-from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import mlxu
 import jax
 import jax.numpy as jnp
 import flax
-from flax.serialization import from_bytes, to_bytes
+from flax.serialization import (
+    from_bytes, to_bytes, to_state_dict, from_state_dict
+)
+from flax.traverse_util import flatten_dict, unflatten_dict, empty_node
 import msgpack
 
-from EasyLM.jax_utils import inplace_float_to_dtype
+from EasyLM.jax_utils import tree_apply
 
 
 class StreamingCheckpointer(object):
     """ Custom msgpack checkpointer that saves large train states by serializing
         and saving tensors one by one in a streaming fashion. Avoids running
-        out of memory or local TPU disk with default flax checkpointer. The
-        checkpointer saves the train state in an asynchronous manner to avoid
-        timing out on JAX barriers in multi-host training.
+        out of memory or local TPU disk with default flax checkpointer.
     """
 
-    def __init__(self, checkpoint_dir, enable=True):
+    def __init__(self, checkpoint_dir, enable=True, save_optimizer_state=False):
         self.checkpoint_dir = checkpoint_dir
         self.enable = enable
-        self.async_manager = ThreadPoolExecutor(max_workers=1)
+        self.save_optimizer_state = save_optimizer_state
 
-    def _save_checkpoint_worker(self, train_state, filename):
-        path = os.path.join(self.checkpoint_dir, filename)
+    def save_checkpoint(self, train_state, filename, gather_fns=None):
+        if self.enable:
+            path = os.path.join(self.checkpoint_dir, filename)
+        else:
+            path = '/dev/null'
+        train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
-        flattend_train_state = flax.traverse_util.flatten_dict(train_state)
+        flattend_train_state = flatten_dict(train_state)
+        if gather_fns is not None:
+            gather_fns = flatten_dict(to_state_dict(gather_fns))
+
         with mlxu.open_file(path, "wb") as fout:
             for key, value in flattend_train_state.items():
+                if gather_fns is not None:
+                    value = gather_fns[key](value)
                 fout.write(packer.pack((key, to_bytes(value))))
 
-    def save_checkpoint(self, train_state, filename):
-        train_state = flax.serialization.to_state_dict(train_state)
+    def save_pickle(self, obj, filename):
         if self.enable:
-            self.async_manager.submit(
-                self._save_checkpoint_worker, train_state, filename
+            path = os.path.join(self.checkpoint_dir, filename)
+        else:
+            path = '/dev/null'
+        mlxu.save_pickle(obj, path)
+
+    def save_all(self, train_state, gather_fns, metadata=None, dataset=None, milestone=False):
+        step = int(jax.device_get(train_state.step))
+        if self.save_optimizer_state:
+            checkpoint_state = train_state
+            checkpoint_name = 'streaming_train_state'
+            checkpoint_gather_fns = gather_fns
+        else:
+            checkpoint_state = train_state.params
+            checkpoint_name = 'streaming_params'
+            checkpoint_gather_fns = gather_fns.params
+
+        if milestone:
+            # Save a milestone checkpoint that will not be overwritten
+            self.save_pickle(metadata, f'metadata_{step}.pkl')
+            self.save_pickle(dataset, f'dataset_{step}.pkl')
+            self.save_checkpoint(
+                checkpoint_state, f'{checkpoint_name}_{step}', checkpoint_gather_fns
+            )
+        else:
+            # Save a normal checkpoint that can be overwritten
+            self.save_pickle(metadata, 'metadata.pkl')
+            self.save_pickle(dataset, 'dataset.pkl')
+            self.save_checkpoint(
+                checkpoint_state, f'{checkpoint_name}', checkpoint_gather_fns
             )
 
     @staticmethod
-    def load_checkpoint(path, target=None, dtype=None):
+    def load_checkpoint(path, target=None, shard_fns=None):
+        if shard_fns is not None:
+            shard_fns = flatten_dict(
+                to_state_dict(shard_fns)
+            )
         flattend_train_state = {}
         with mlxu.open_file(path) as fin:
             # 83886080 bytes = 80 MB, which is 16 blocks on GCS
             unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
             for key, value in unpacker:
-                flattend_train_state[tuple(key)] = from_bytes(None, value)
+                key = tuple(key)
+                tensor = from_bytes(None, value)
+                if shard_fns is not None:
+                    tensor = shard_fns[key](tensor)
+                flattend_train_state[key] = tensor
 
-        if dtype is not None:
-            inplace_float_to_dtype(flattend_train_state, dtype)
+        if target is not None:
+            flattened_target = flatten_dict(
+                to_state_dict(target), keep_empty_nodes=True
+            )
+            for key, value in flattened_target.items():
+                if key not in flattend_train_state and value == empty_node:
+                    flattend_train_state[key] = value
 
-        train_state = flax.traverse_util.unflatten_dict(flattend_train_state)
+        train_state = unflatten_dict(flattend_train_state)
         if target is None:
             return train_state
-        return flax.serialization.from_state_dict(target, train_state)
+
+        return from_state_dict(target, train_state)
 
     @staticmethod
-    def load_flax_checkpoint(path, target=None, dtype=None):
+    def load_flax_checkpoint(path, target=None, shard_fns=None):
         """ Load a standard flax checkpoint that's not saved with the
             msgpack streaming format.
         """
@@ -65,16 +114,68 @@ class StreamingCheckpointer(object):
             encoded_bytes = fin.read()
 
         state_dict = flax.serialization.msgpack_restore(encoded_bytes)
-        if dtype is not None:
-            inplace_float_to_dtype(state_dict, dtype)
+        if shard_fns is not None:
+            shard_fns = to_state_dict(shard_fns)
+            state_dict = tree_apply(shard_fns, state_dict)
+
         if target is None:
             return state_dict
-        return flax.serialization.from_state_dict(target, state_dict)
+        return from_state_dict(target, state_dict)
 
-    def _save_pickle_worker(self, obj, filename):
-        path = os.path.join(self.checkpoint_dir, filename)
-        mlxu.save_pickle(obj, path)
+    @classmethod
+    def load_trainstate_checkpoint(cls, load_from, trainstate_target=None, trainstate_shard_fns=None):
+        if trainstate_target is not None:
+            trainstate_params_target = trainstate_target.params
+            params_target = trainstate_params_target['params']
+        else:
+            trainstate_params_target, params_target = None, None
 
-    def save_pickle(self, obj, filename):
-        if self.enable:
-            self.async_manager.submit(self._save_pickle_worker, obj, filename)
+        if trainstate_shard_fns is not None:
+            trainstate_params_shard_fns = trainstate_shard_fns.params
+            params_shard_fns = trainstate_params_shard_fns['params']
+        else:
+            trainstate_params_shard_fns, params_shard_fns = None, None
+
+        load_type, load_path = load_from.split('::', 1)
+        train_state = None
+        restored_params = None
+        if load_type == 'trainstate':
+            # Load the entire train state in the streaming format
+            train_state = cls.load_checkpoint(
+                path=load_path,
+                target=trainstate_target,
+                shard_fns=trainstate_shard_fns,
+            )
+        elif load_type == 'trainstate_params':
+            # Load the params part of the train state in the streaming format
+            restored_params = flax.core.frozen_dict.freeze(
+                cls.load_checkpoint(
+                    path=load_path,
+                    target=trainstate_target,
+                    shard_fns=trainstate_shard_fns,
+                ).params
+            )
+        elif load_type == 'params':
+            # Load the params in the streaming format
+            restored_params = flax.core.frozen_dict.freeze(
+                cls.load_checkpoint(
+                    path=load_path,
+                    target=trainstate_params_target,
+                    shard_fns=trainstate_params_shard_fns,
+                )
+            )
+        elif load_type == 'flax_params':
+            # Load the params in the standard flax format (non-streaming)
+            # This requires the entire params to fit in memory
+            restored_params = cls.load_flax_checkpoint(
+                path=load_path,
+                target=params_target,
+                shard_fns=params_shard_fns
+            )
+            restored_params = flax.core.frozen_dict.freeze(
+                {'params': restored_params}
+            )
+        else:
+            raise ValueError(f'Invalid load_from type: {load_type}')
+
+        return train_state, restored_params

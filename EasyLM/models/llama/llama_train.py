@@ -21,9 +21,10 @@ from EasyLM.data import PretrainDataset
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, ShardingHelper, get_jax_mp_mesh, next_rng, match_partition_rules,
+    JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
-    set_random_seed, average_metrics, get_weight_decay_mask
+    set_random_seed, average_metrics, get_weight_decay_mask,
+    make_shard_and_gather_fns, tree_apply
 )
 from EasyLM.models.llama.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
@@ -33,7 +34,7 @@ from EasyLM.models.llama.llama_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=1,
+    mp_mesh_dim=-1,
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -42,6 +43,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     log_freq=50,
     save_model_freq=0,
     save_milestone_freq=0,
+    save_optimizer_state=False,
     eval_steps=0,
     tokenizer=LLaMAConfig.get_tokenizer_config(),
     train_dataset=PretrainDataset.get_default_config(),
@@ -100,6 +102,9 @@ def main(argv):
         FLAGS.optimizer,
         get_weight_decay_mask(LLaMAConfig.get_weight_decay_exclusions())
     )
+
+    def create_trainstate_from_params(params):
+        return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
     def init_fn(rng):
         rng_generator = JaxRNG(rng)
@@ -161,14 +166,23 @@ def main(argv):
         LLaMAConfig.get_partition_rules(), train_state_shapes
     )
 
-    sharding_helper = ShardingHelper(train_state_partition)
+    shard_fns, gather_fns = make_shard_and_gather_fns(
+        train_state_partition, train_state_shapes
+    )
     checkpointer = StreamingCheckpointer(
-        logger.checkpoint_dir, enable=jax.process_index() == 0
+        logger.checkpoint_dir, enable=jax.process_index() == 0,
+        save_optimizer_state=FLAGS.save_optimizer_state
     )
 
     sharded_init_fn = pjit(
         init_fn,
         in_axis_resources=PS(),
+        out_axis_resources=train_state_partition
+    )
+
+    sharded_create_trainstate_from_params = pjit(
+        create_trainstate_from_params,
+        in_axis_resources=(train_state_partition.params, ),
         out_axis_resources=train_state_partition
     )
 
@@ -187,60 +201,38 @@ def main(argv):
     )
 
     def save_checkpoint(train_state, milestone=False):
-        train_state = sharding_helper.get(train_state)
-        step = int(train_state.step)
+        step = int(jax.device_get(train_state.step))
         metadata = dict(
             step=step,
             variant=variant,
             flags=flags_config_dict,
             llama_config=llama_config.to_dict(),
         )
-        if milestone:
-            # Save a milestone checkpoint that will not be overwritten
-            checkpointer.save_pickle(metadata, f'metadata_{step}.pkl')
-            checkpointer.save_pickle(dataset, f'dataset_{step}.pkl')
-            checkpointer.save_checkpoint(train_state, f'train_state_{step}')
-        else:
-            # Save a normal checkpoint that can be overwritten
-            checkpointer.save_pickle(metadata, 'metadata.pkl')
-            checkpointer.save_pickle(dataset, 'dataset.pkl')
-            checkpointer.save_checkpoint(train_state, 'train_state')
-
-    start_step = 0
-    restored_checkpoint_state = None
-    restored_params = None
-    if FLAGS.load_checkpoint != '':
-        load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
-        with jax.default_device(jax.devices("cpu")[0]):
-            if load_type == 'trainstate':
-                restored_checkpoint_state = checkpointer.load_checkpoint(
-                    load_path, train_state_shapes
-                )
-                start_step = restored_checkpoint_state.step
-            elif load_type == 'trainstate_params':
-                restored_params = flax.core.frozen_dict.freeze(
-                    checkpointer.load_checkpoint(load_path)['params']
-                )
-            elif load_type == 'flax_params':
-                restored_params = flax.core.frozen_dict.freeze(
-                    {'params': checkpointer.load_flax_checkpoint(load_path, dtype=jnp.float32)}
-                )
-            else:
-                raise ValueError(f'Unknown load type: {load_type}')
+        checkpointer.save_all(
+            train_state=train_state,
+            gather_fns=gather_fns,
+            metadata=metadata,
+            dataset=dataset,
+            milestone=milestone,
+        )
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
     with mesh:
-        if restored_checkpoint_state is not None:
-            train_state = sharding_helper.put(restored_checkpoint_state)
-            del restored_checkpoint_state
-        elif restored_params is not None:
+        train_state, restored_params = None, None
+        if FLAGS.load_checkpoint != '':
+            train_state, restored_params = checkpointer.load_trainstate_checkpoint(
+                FLAGS.load_checkpoint, train_state_shapes, shard_fns
+            )
+
+        if train_state is None and restored_params is None:
+            # Initialize from scratch
             train_state = sharded_init_fn(next_rng())
-            train_state = sharding_helper.get(train_state)
-            train_state = train_state.replace(params=restored_params)
-            train_state = sharding_helper.put(train_state)
+        elif train_state is None and restored_params is not None:
+            # Restore from params but initialize train_state
+            train_state = sharded_create_trainstate_from_params(restored_params)
             del restored_params
-        else:
-            train_state = sharded_init_fn(next_rng())
+
+        start_step = int(jax.device_get(train_state.step))
 
         if FLAGS.save_model_freq > 0:
             save_checkpoint(train_state)

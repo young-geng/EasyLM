@@ -47,42 +47,53 @@ class JaxRNG(object):
             return {key: val for key, val in zip(keys, split_rngs[1:])}
 
 
-class ShardingHelper(object):
-    """ A helper utility that handles gathering sharded pytree to host and
-        shard host pytree to devices that supports multi-host environment.
-        This utility does gather and shard one by one to avoid OOM on device.
+def make_shard_and_gather_fns(partition_specs, dtype_specs=None):
+    """ Create pytree of sharding and gathering functions from pytree of
+        partition specs.
     """
+    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
 
-    def __init__(self, partition_specs):
-        self.partition_specs = partition_specs
-        def gather_tensor(partition_spec):
-            return pjit(
-                lambda x: x,
-                in_axis_resources=partition_spec,
-                out_axis_resources=None
-            )
+    def make_to_dtype_fn(dtype_spec):
+        def to_dtype(tensor):
+            if dtype_specs in float_dtypes and getattr(tensor, 'dtype', None) in float_dtypes:
+                # Convert all float tensors to the same dtype
+                return tensor.astype(dtype_specs)
+            elif hasattr(dtype_spec, 'dtype') and hasattr(tensor, 'dtype'):
+                return tensor.astype(dtype_spec.dtype)
+            return tensor
+        return to_dtype
 
-        def shard_tensor(partition_spec):
-            return pjit(
-                lambda x: x,
-                in_axis_resources=None,
-                out_axis_resources=partition_spec
-            )
+    def make_shard_fn(partition_spec, dtype_spec=None):
+        jax_shard_function = pjit(
+            make_to_dtype_fn(dtype_spec),
+            in_axis_resources=None,
+            out_axis_resources=partition_spec
+        )
+        def shard_fn(tensor):
+            return jax_shard_function(tensor).block_until_ready()
+        return shard_fn
 
-        self.gather_fns = jax.tree_util.tree_map(gather_tensor, partition_specs)
-        self.shard_fns = jax.tree_util.tree_map(shard_tensor, partition_specs)
+    def make_gather_fn(partition_spec, dtype_spec=None):
+        jax_gather_fn = pjit(
+            make_to_dtype_fn(dtype_spec),
+            in_axis_resources=partition_spec,
+            out_axis_resources=None
+        )
+        def gather_fn(tensor):
+            return jax.device_get(jax_gather_fn(tensor))
+        return gather_fn
 
-    def get(self, tree):
-        def get_fn(gather_fn, tensor):
-            return jax.device_get(gather_fn(tensor))
-
-        return jax.tree_util.tree_map(get_fn, self.gather_fns, tree)
-
-    def put(self, tree):
-        def put_fn(shard_fn, tensor):
-            return shard_fn(tensor).block_until_ready()
-
-        return jax.tree_util.tree_map(put_fn, self.shard_fns, tree)
+    if dtype_specs is None or dtype_specs in float_dtypes:
+        shard_fns = jax.tree_util.tree_map(make_shard_fn, partition_specs)
+        gather_fns = jax.tree_util.tree_map(make_gather_fn, partition_specs)
+    else:
+        shard_fns = jax.tree_util.tree_map(
+            make_shard_fn, partition_specs, dtype_specs
+        )
+        gather_fns = jax.tree_util.tree_map(
+            make_gather_fn, partition_specs, dtype_specs
+        )
+    return shard_fns, gather_fns
 
 
 def set_random_seed(seed):
@@ -206,38 +217,6 @@ def get_float_dtype_by_name(dtype):
     }[dtype]
 
 
-def float_to_dtype(tree, dtype=jnp.float32):
-    """ Convert all float(fp16, bf16, fp32, fp64) arrays in a pytree to a given
-        dtype.
-    """
-    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
-    assert dtype in float_dtypes, 'dtype must be a float type!'
-    def to_dtype(x):
-        if isinstance(x, (np.ndarray, jnp.ndarray)):
-            if x.dtype in float_dtypes and x.dtype != dtype:
-                x = x.astype(dtype)
-        return x
-    return jax.tree_util.tree_map(to_dtype, tree)
-
-
-def inplace_float_to_dtype(tree, dtype=jnp.float32):
-    """ Convert all float(fp16, bf16, fp32, fp64) arrays in a pytree to a given
-        dtype inplace. Only supports nested dicts.
-    """
-    if isinstance(tree, FrozenDict):
-        raise ValueError('Only supports nested dicts!')
-    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
-    assert dtype in float_dtypes, 'dtype must be a float type!'
-    for key, val in tree.items():
-        if isinstance(val, (np.ndarray, jnp.ndarray)) and val.dtype in float_dtypes:
-            if val.dtype != dtype:
-                tree[key] = val.astype(dtype)
-        elif isinstance(val, dict):
-            inplace_float_to_dtype(val, dtype)
-        elif isinstance(val, FrozenDict):
-            raise ValueError('Only supports nested dicts!')
-
-
 def flatten_tree(xs, is_leaf=None, sep=None):
     """ A stronger version of flax.traverse_util.flatten_dict, supports
         dict, tuple, list and TrainState. Tuple and list indices will be
@@ -327,3 +306,8 @@ def get_weight_decay_mask(exclusions):
         return named_tree_map(decay, params, sep='/')
 
     return weight_decay_mask
+
+
+def tree_apply(fns, tree):
+    """ Apply a pytree of functions to the pytree. """
+    return jax.tree_util.tree_map(lambda fn, x: fn(x), fns, tree)
