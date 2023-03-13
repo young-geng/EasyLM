@@ -54,7 +54,7 @@ class HuggingfaceDataset(object):
         config = ConfigDict()
         config.seq_length = 1024
         config.path = 'c4'
-        config.name = 'en'
+        config.name = 'realnewslike'
         config.split = 'train'
         config.field = 'text'
         config.streaming = True
