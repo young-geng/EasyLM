@@ -40,7 +40,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_dataset_state='',
     log_freq=50,
     save_model_freq=50,
-    save_milestone_freq=0,
+    save_milestone_freq=5000,
     save_optimizer_state=False,
     eval_steps=0,
     tokenizer=GPTJConfig.get_tokenizer_config(), 
@@ -203,7 +203,7 @@ def main(argv):
         metadata = dict(
             step=step,
             variant=variant,
-            flags=save_checkpointsave_checkpoint,
+            flags=flags_config_dict,
             gptj_config=gptj_config.to_dict(),
         )
         checkpointer.save_all(
