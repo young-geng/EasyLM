@@ -55,9 +55,9 @@ class StreamingCheckpointer(object):
             checkpoint_name = 'streaming_train_state'
             checkpoint_gather_fns = gather_fns
         else:
-            checkpoint_state = train_state.params
+            checkpoint_state = train_state.params['params']
             checkpoint_name = 'streaming_params'
-            checkpoint_gather_fns = gather_fns.params
+            checkpoint_gather_fns = gather_fns.params['params']
 
         if milestone:
             # Save a milestone checkpoint that will not be overwritten
@@ -125,16 +125,14 @@ class StreamingCheckpointer(object):
     @classmethod
     def load_trainstate_checkpoint(cls, load_from, trainstate_target=None, trainstate_shard_fns=None):
         if trainstate_target is not None:
-            trainstate_params_target = trainstate_target.params
-            params_target = trainstate_params_target['params']
+            params_target = trainstate_target.params['params']
         else:
-            trainstate_params_target, params_target = None, None
+            params_target = None
 
         if trainstate_shard_fns is not None:
-            trainstate_params_shard_fns = trainstate_shard_fns.params
-            params_shard_fns = trainstate_params_shard_fns['params']
+            params_shard_fns = trainstate_shard_fns.params['params']
         else:
-            trainstate_params_shard_fns, params_shard_fns = None, None
+            params_shard_fns = None
 
         load_type, load_path = load_from.split('::', 1)
         train_state = None
@@ -161,12 +159,13 @@ class StreamingCheckpointer(object):
             restored_params = flax.core.frozen_dict.freeze(restored_params)
         elif load_type == 'params':
             # Load the params in the streaming format
+            restored_params = cls.load_checkpoint(
+                path=load_path,
+                target=params_target,
+                shard_fns=params_shard_fns,
+            )
             restored_params = flax.core.frozen_dict.freeze(
-                cls.load_checkpoint(
-                    path=load_path,
-                    target=trainstate_params_target,
-                    shard_fns=trainstate_params_shard_fns,
-                )
+                {'params': restored_params}
             )
         elif load_type == 'flax_params':
             # Load the params in the standard flax format (non-streaming)
