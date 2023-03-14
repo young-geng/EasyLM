@@ -187,20 +187,20 @@ class LLaMAConfig(PretrainedConfig):
         """
         return [
             # embeddings
-            (("transformer/wte/embedding"), PartitionSpec("mp", None)),
+            (("transformer/wte/embedding"), PartitionSpec(("mp1", "mp2"), None)),
             # atention
-            (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, "mp")),
-            (("attention/wo/kernel"), PartitionSpec("mp", None)),
+            (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
+            (("attention/wo/kernel"), PartitionSpec(("mp1", "mp2"), None)),
             # mlp
-            (("feed_forward/w1/kernel"), PartitionSpec(None, "mp")),
-            (("feed_forward/w2/kernel"), PartitionSpec("mp", None)),
-            (("feed_forward/w3/kernel"), PartitionSpec(None, "mp")),
+            (("feed_forward/w1/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
+            (("feed_forward/w2/kernel"), PartitionSpec(("mp1", "mp2"), None)),
+            (("feed_forward/w3/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
             # layer norms
             (("attention_norm/kernel"), PartitionSpec(None)),
             (("ffn_norm/kernel"), PartitionSpec(None)),
             # output head
             (("transformer/ln_f/kernel"), PartitionSpec(None)),
-            (("lm_head/kernel"), PartitionSpec(None, "mp")),
+            (("lm_head/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
             ('.*', PartitionSpec(None)),
         ]
 
@@ -419,12 +419,12 @@ class FlaxLLaMAAttention(nn.Module):
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
 
-        freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
-
         mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
-            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, None, "mp"))
-            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, None, "mp"))
+        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
+            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, "mp1", "mp2"))
+            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, "mp1", "mp2"))
+
+        freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
@@ -461,6 +461,11 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
 
+        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
+            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, "mp1", "mp2"))
+            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, "mp1", "mp2"))
+
         # usual dot product attention
         attn_weights = dot_product_attention_weights(
             xq,
@@ -474,9 +479,9 @@ class FlaxLLaMAAttention(nn.Module):
         )
 
         mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
+        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
             attn_weights = with_sharding_constraint(
-                attn_weights, PartitionSpec("dp", None, None, "mp")
+                attn_weights, PartitionSpec("dp", "mp1", None, None)
             )
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
@@ -746,7 +751,10 @@ class FlaxLLaMABlockCollection(nn.Module):
     def setup(self):
         block = FlaxLLaMABlock
         if self.config.gradient_checkpointing:
-            FlaxLLaMACheckpointBlock = remat(block, static_argnums=(3, 4, 5))
+            FlaxLLaMACheckpointBlock = remat(
+                block, static_argnums=(3, 4, 5),
+                policy=jax.checkpoint_policies.nothing_saveable
+            )
             block = FlaxLLaMACheckpointBlock
         self.blocks = [
             block(self.config, name=str(i), dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision) for i in range(self.config.num_hidden_layers)

@@ -102,16 +102,27 @@ def set_random_seed(seed):
     init_rng(seed)
 
 
-def get_jax_mp_mesh(mp_axis_dim, mp_axis_name='mp', dp_axis_name='dp'):
+def get_jax_mp_mesh(mp_axis_dims, mp_axis_prefix='mp', dp_axis_name='dp'):
     """ Return a 2D mesh for (MP, DP) partitioning. """
+    if isinstance(mp_axis_dims, int):
+        mp_axis_dims = [mp_axis_dims]
+    elif isinstance(mp_axis_dims, str):
+        mp_axis_dims = [int(x) for x in mp_axis_dims.split(',')]
+
     device_count = jax.device_count()
-    if mp_axis_dim <= 0:
-        mp_axis_dim = device_count
-    assert device_count % mp_axis_dim == 0
-    return Mesh(
-        np.array(jax.devices()).reshape(-1, mp_axis_dim),
-        (dp_axis_name, mp_axis_name)
-    )
+    mp_axis_dims = [x if x > 0 else device_count for x in mp_axis_dims]
+
+    total_mp_dims = np.prod(mp_axis_dims)
+    assert total_mp_dims <= device_count and device_count % total_mp_dims == 0
+
+    axis_names = [dp_axis_name]
+    if len(mp_axis_dims) == 1:
+        axis_names.append(mp_axis_prefix)
+    else:
+        for i in range(1, len(mp_axis_dims) + 1):
+            axis_names.append(f'{mp_axis_prefix}{i}')
+
+    return Mesh(np.array(jax.devices()).reshape(-1, *mp_axis_dims), axis_names)
 
 
 def wrap_function_with_rng(rng):

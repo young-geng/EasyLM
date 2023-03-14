@@ -34,7 +34,7 @@ from EasyLM.models.llama.llama_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=-1,
+    mp_mesh_dim='1,-1',
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -217,6 +217,7 @@ def main(argv):
         )
 
     mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
+    assert len(mesh.shape) == 3, 'MP mesh must be 2D'
     with mesh:
         train_state, restored_params = None, None
         if FLAGS.load_checkpoint != '':

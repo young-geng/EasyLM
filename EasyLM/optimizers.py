@@ -25,7 +25,7 @@ class OptimizerFactory(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.accumulate_gradient_steps = 1
-        config.type = 'palm'
+        config.type = 'adamw'
         config.palm_optimizer = PalmOptimizerFactory.get_default_config()
         config.adamw_optimizer = AdamWOptimizerFactory.get_default_config()
 
@@ -160,7 +160,7 @@ class AdamWOptimizerFactory(object):
         config.clip_gradient = 1.0
         config.weight_decay = 1e-4
         config.bf16_momentum = True
-        config.multiply_by_parameter_scale = False
+        config.multiply_by_parameter_scale = True
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
