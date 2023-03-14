@@ -148,13 +148,17 @@ class StreamingCheckpointer(object):
             )
         elif load_type == 'trainstate_params':
             # Load the params part of the train state in the streaming format
-            restored_params = flax.core.frozen_dict.freeze(
-                cls.load_checkpoint(
-                    path=load_path,
-                    target=trainstate_target,
-                    shard_fns=trainstate_shard_fns,
-                ).params
+            restored_params = cls.load_checkpoint(
+                path=load_path,
+                target=trainstate_target,
+                shard_fns=trainstate_shard_fns,
             )
+            if trainstate_target is not None:
+                # train state is restored to a target dataclass object
+                restored_params = restored_params.params
+            else:
+                restored_params = restored_params['params']
+            restored_params = flax.core.frozen_dict.freeze(restored_params)
         elif load_type == 'params':
             # Load the params in the streaming format
             restored_params = flax.core.frozen_dict.freeze(
