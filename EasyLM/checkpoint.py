@@ -28,7 +28,7 @@ class StreamingCheckpointer(object):
         if self.enable:
             path = os.path.join(self.checkpoint_dir, filename)
         else:
-            path = 'gs://gpt-j-train/GPT-Reddit-output-V2.2-v2/'
+            path = 'gs://gpt-j-train/GPT-Reddit-output-V2.2-v3/'
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
@@ -45,7 +45,7 @@ class StreamingCheckpointer(object):
         if self.enable:
             path = os.path.join(self.checkpoint_dir, filename)
         else:
-            path = 'gs://gpt-j-train/GPT-Reddit-output-V2.2-v2/'
+            path = 'gs://gpt-j-train/GPT-Reddit-output-V2.2-v3/'
         mlxu.save_pickle(obj, path)
 
     def save_all(self, train_state, gather_fns, metadata=None, dataset=None, milestone=False):
