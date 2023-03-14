@@ -34,12 +34,12 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     initialize_jax_distributed=True,
     mp_mesh_dim=-1,
     total_steps=52534,
-    load_gptj_config='',
+    load_gptj_config='huggingface::EleutherAI/gpt-j-6B',
     update_gptj_config='',
-    load_checkpoint='',
+    load_checkpoint='huggingface::EleutherAI/gpt-j-6B',
     load_dataset_state='',
     log_freq=50,
-    save_model_freq=0,
+    save_model_freq=50,
     save_milestone_freq=0,
     save_optimizer_state=False,
     eval_steps=0,
@@ -203,7 +203,7 @@ def main(argv):
         metadata = dict(
             step=step,
             variant=variant,
-            flags=flags_config_dict,
+            flags=save_checkpointsave_checkpoint,
             gptj_config=gptj_config.to_dict(),
         )
         checkpointer.save_all(

@@ -45,8 +45,8 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     temperature=1.0,
     num_beams=1,
     loglikelihood_add_bos_token=False,
-    load_gptj_config='',
-    load_checkpoint='',
+    load_gptj_config='huggingface::EleutherAI/gpt-j-6B',
+    load_checkpoint='huggingface::EleutherAI/gpt-j-6B',
     tokenizer=GPTJConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
 )
