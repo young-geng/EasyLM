@@ -30,6 +30,8 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
+from EasyLM.jax_utils import names_in_current_mesh
+
 
 LLAMA_STANDARD_CONFIGS = {
     '7b': {
@@ -419,10 +421,10 @@ class FlaxLLaMAAttention(nn.Module):
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
 
-        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
+        if names_in_current_mesh("dp", "mp1", "mp2"):
             xq = with_sharding_constraint(xq, PartitionSpec("dp", None, "mp1", "mp2"))
             xk = with_sharding_constraint(xk, PartitionSpec("dp", None, "mp1", "mp2"))
+            xv = with_sharding_constraint(xv, PartitionSpec("dp", None, "mp1", "mp2"))
 
         freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
 
@@ -460,11 +462,6 @@ class FlaxLLaMAAttention(nn.Module):
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
             jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
         )
-
-        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
-            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, "mp1", "mp2"))
-            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, "mp1", "mp2"))
 
         # usual dot product attention
         attn_weights = dot_product_attention_weights(

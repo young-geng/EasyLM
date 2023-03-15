@@ -75,17 +75,25 @@ class StreamingCheckpointer(object):
             )
 
     @staticmethod
-    def load_checkpoint(path, target=None, shard_fns=None):
+    def load_checkpoint(path, target=None, shard_fns=None, remove_dict_prefix=None):
         if shard_fns is not None:
             shard_fns = flatten_dict(
                 to_state_dict(shard_fns)
             )
+        if remove_dict_prefix is not None:
+            remove_dict_prefix = tuple(remove_dict_prefix)
         flattend_train_state = {}
         with mlxu.open_file(path) as fin:
             # 83886080 bytes = 80 MB, which is 16 blocks on GCS
             unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
             for key, value in unpacker:
                 key = tuple(key)
+                if remove_dict_prefix is not None:
+                    if key[:len(remove_dict_prefix)] == remove_dict_prefix:
+                        key = key[len(remove_dict_prefix):]
+                    else:
+                        continue
+
                 tensor = from_bytes(None, value)
                 if shard_fns is not None:
                     tensor = shard_fns[key](tensor)
@@ -148,15 +156,13 @@ class StreamingCheckpointer(object):
             # Load the params part of the train state in the streaming format
             restored_params = cls.load_checkpoint(
                 path=load_path,
-                target=trainstate_target,
-                shard_fns=trainstate_shard_fns,
+                target=params_target,
+                shard_fns=params_shard_fns,
+                remove_dict_prefix=('params', 'params'),
             )
-            if trainstate_target is not None:
-                # train state is restored to a target dataclass object
-                restored_params = restored_params.params
-            else:
-                restored_params = restored_params['params']
-            restored_params = flax.core.frozen_dict.freeze(restored_params)
+            restored_params = flax.core.frozen_dict.freeze(
+                {'params': restored_params}
+            )
         elif load_type == 'params':
             # Load the params in the streaming format
             restored_params = cls.load_checkpoint(
