@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from jax.experimental import PartitionSpec as PS
 from jax.experimental.maps import Mesh
 from jax.experimental.pjit import pjit
+from jax.interpreters import pxla
 import numpy as np
 from absl import logging
 from flax import jax_utils
@@ -125,6 +126,12 @@ def get_jax_mp_mesh(mp_axis_dims, mp_axis_prefix='mp', dp_axis_name='dp'):
     return Mesh(np.array(jax.devices()).reshape(-1, *mp_axis_dims), axis_names)
 
 
+def names_in_current_mesh(*names):
+    """ Check if current mesh axes contain these names. """
+    mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+    return set(names) <= set(mesh_axis_names)
+
+
 def wrap_function_with_rng(rng):
     """ To be used as decorator, automatically bookkeep a RNG for the wrapped function. """
     def wrap_function(function):
@@ -226,6 +233,15 @@ def get_float_dtype_by_name(dtype):
         'fp32': jnp.float32,
         'fp64': jnp.float64,
     }[dtype]
+
+
+def float_to_dtype(tree, dtype):
+    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    def to_dtype(x):
+        if getattr(x, 'dtype', None) in float_dtypes:
+            x = x.astype(dtype)
+        return x
+    return jax.tree_util.tree_map(to_dtype, tree)
 
 
 def flatten_tree(xs, is_leaf=None, sep=None):
