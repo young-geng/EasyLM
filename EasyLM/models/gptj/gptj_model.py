@@ -37,13 +37,13 @@ from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from transformers.generation.flax_logits_process import FlaxLogitsProcessorList
 from transformers import AutoTokenizer
-from jax.experimental.pjit import with_sharding_constraint
 from jax.experimental import PartitionSpec
-from jax.interpreters import pxla
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
+
+from EasyLM.jax_utils import with_sharding_constraint
 
 
 """
@@ -463,11 +463,8 @@ class FlaxGPTJAttention(nn.Module):
         sincos = jnp.take(self.embed_positions, position_ids, axis=0)
         sincos = jnp.split(sincos, 2, axis=-1)
         # Rotary position embeddings induce some weird issues in multi-host environments, so we remove activation-sharding for keys/query vectors to fix this.
-        resource_env = pxla.thread_resources.env
-        mesh = resource_env.physical_mesh
-        if "dp" in mesh.axis_names:
-            key = with_sharding_constraint(key, PartitionSpec("dp", None, None, None))
-            query = with_sharding_constraint(query, PartitionSpec("dp", None, None, None))
+        # key = with_sharding_constraint(key, PartitionSpec("dp", None, None, None))
+        # query = with_sharding_constraint(query, PartitionSpec("dp", None, None, None))
         if self.rotary_dim is not None and self.rotary_dim > 0:
             k_rot = key[:, :, :, : self.rotary_dim]
             k_pass = key[:, :, :, self.rotary_dim :]
