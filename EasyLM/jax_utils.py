@@ -11,6 +11,7 @@ import flax
 import jax
 import jax.numpy as jnp
 from jax.experimental import PartitionSpec as PS
+from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
 from jax.experimental.maps import Mesh
 from jax.experimental.pjit import pjit
 from jax.interpreters import pxla
@@ -130,6 +131,32 @@ def names_in_current_mesh(*names):
     """ Check if current mesh axes contain these names. """
     mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
     return set(names) <= set(mesh_axis_names)
+
+
+def get_names_from_parition_spec(partition_specs):
+    """ Return axis names from partition specs. """
+    names = set()
+    if isinstance(partition_specs, dict):
+        partition_specs = partition_specs.values()
+    for item in partition_specs:
+        if item is None:
+            continue
+        elif isinstance(item, str):
+            names.add(item)
+        else:
+            names.update(get_names_from_parition_spec(item))
+
+    return list(names)
+
+
+def with_sharding_constraint(x, partition_specs):
+    """ A smarter version of with_sharding_constraint that only applies the
+        constraint if the current mesh contains the axes in the partition specs.
+    """
+    axis_names = get_names_from_parition_spec(partition_specs)
+    if names_in_current_mesh(*axis_names):
+        x = _with_sharding_constraint(x, partition_specs)
+    return x
 
 
 def wrap_function_with_rng(rng):

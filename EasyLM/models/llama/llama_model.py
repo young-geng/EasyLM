@@ -8,9 +8,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jax.experimental import PartitionSpec
-from jax.experimental.pjit import with_sharding_constraint
-from jax.interpreters import pxla
+from jax.experimental import PartitionSpec as PS
 import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask
@@ -30,7 +28,7 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.jax_utils import names_in_current_mesh
+from EasyLM.jax_utils import with_sharding_constraint
 
 
 LLAMA_STANDARD_CONFIGS = {
@@ -189,21 +187,21 @@ class LLaMAConfig(PretrainedConfig):
         """
         return [
             # embeddings
-            (("transformer/wte/embedding"), PartitionSpec(("mp1", "mp2"), None)),
+            (("transformer/wte/embedding"), PS(("mp1", "mp2"), None)),
             # atention
-            (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
-            (("attention/wo/kernel"), PartitionSpec(("mp1", "mp2"), None)),
+            (("attention/(wq|wk|wv)/kernel"), PS(None, ("mp1", "mp2"))),
+            (("attention/wo/kernel"), PS(("mp1", "mp2"), None)),
             # mlp
-            (("feed_forward/w1/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
-            (("feed_forward/w2/kernel"), PartitionSpec(("mp1", "mp2"), None)),
-            (("feed_forward/w3/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
+            (("feed_forward/w1/kernel"), PS(None, ("mp1", "mp2"))),
+            (("feed_forward/w2/kernel"), PS(("mp1", "mp2"), None)),
+            (("feed_forward/w3/kernel"), PS(None, ("mp1", "mp2"))),
             # layer norms
-            (("attention_norm/kernel"), PartitionSpec(None)),
-            (("ffn_norm/kernel"), PartitionSpec(None)),
+            (("attention_norm/kernel"), PS(None)),
+            (("ffn_norm/kernel"), PS(None)),
             # output head
-            (("transformer/ln_f/kernel"), PartitionSpec(None)),
-            (("lm_head/kernel"), PartitionSpec(None, ("mp1", "mp2"))),
-            ('.*', PartitionSpec(None)),
+            (("transformer/ln_f/kernel"), PS(None)),
+            (("lm_head/kernel"), PS(None, ("mp1", "mp2"))),
+            ('.*', PS(None)),
         ]
 
     @staticmethod
@@ -421,10 +419,9 @@ class FlaxLLaMAAttention(nn.Module):
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
 
-        if names_in_current_mesh("dp", "mp1", "mp2"):
-            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, "mp1", "mp2"))
-            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, "mp1", "mp2"))
-            xv = with_sharding_constraint(xv, PartitionSpec("dp", None, "mp1", "mp2"))
+        xq = with_sharding_constraint(xq, PS("dp", None, "mp1", "mp2"))
+        xk = with_sharding_constraint(xk, PS("dp", None, "mp1", "mp2"))
+        xv = with_sharding_constraint(xv, PS("dp", None, "mp1", "mp2"))
 
         freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
 
@@ -474,19 +471,18 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-
-        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if set(("dp", "mp1", "mp2")) <= set(mesh_axis_names):
-            attn_weights = with_sharding_constraint(
-                attn_weights, PartitionSpec("dp", "mp1", None, None)
-            )
+        attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp1", None, None))
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, "mp1", "mp2"))
         attn_output = self._merge_heads(attn_output)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.wo(attn_output)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
+        outputs = with_sharding_constraint(outputs, PS("dp", None, ("mp1", "mp2")))
         return outputs
 
 
