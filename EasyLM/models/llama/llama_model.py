@@ -146,6 +146,8 @@ class LLaMAConfig(PretrainedConfig):
         attn_pdrop=0.0,
         tie_word_embeddings=False,
         gradient_checkpointing=True,
+        fcm_min_ratio=0.0,
+        fcm_max_ratio=0.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -161,6 +163,8 @@ class LLaMAConfig(PretrainedConfig):
         self.embd_pdrop = embd_pdrop
         self.attn_pdrop = attn_pdrop
         self.gradient_checkpointing = gradient_checkpointing
+        self.fcm_min_ratio = fcm_min_ratio
+        self.fcm_max_ratio = fcm_max_ratio
         super().__init__(
             # pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -412,6 +416,7 @@ class FlaxLLaMAAttention(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask=None,
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
@@ -442,7 +447,7 @@ class FlaxLLaMAAttention(nn.Module):
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
 
         attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-        attention_mask = combine_masks(attention_mask, causal_mask)
+        attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
 
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
@@ -568,6 +573,24 @@ class FlaxLLaMABlock(nn.Module):
         init_cache: bool = False,
         output_attentions: bool = False,
     ):
+
+        if not deterministic and self.config.fcm_max_ratio > 0:
+            # Apply forgetful causal mask
+            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
+            fcm_ratio = jax.random.uniform(
+                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
+                minval=self.config.fcm_min_ratio,
+                maxval=self.config.fcm_max_ratio
+            )
+            fcm_mask = jax.random.uniform(
+                self.make_rng('fcm'),
+                shape=(batch_size, 1, seq_length, seq_length)
+            ) > fcm_ratio
+            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
+            fcm_mask = fcm_mask.astype('bool')
+        else:
+            fcm_mask = None
+
         attn_outputs = self.attention(
             self.attention_norm(hidden_states),
             attention_mask=attention_mask,
@@ -575,6 +598,7 @@ class FlaxLLaMABlock(nn.Module):
             deterministic=deterministic,
             init_cache=init_cache,
             output_attentions=output_attentions,
+            fcm_mask=fcm_mask,
         )
         attn_output = attn_outputs[0]
         hidden_states = hidden_states + attn_output
