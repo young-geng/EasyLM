@@ -191,20 +191,20 @@ class LLaMAConfig(PretrainedConfig):
         """
         return [
             # embeddings
-            (("transformer/wte/embedding"), PS(("mp1", "mp2"), None)),
+            ("transformer/wte/embedding", PS(("mp1", "mp2"), None)),
             # atention
-            (("attention/(wq|wk|wv)/kernel"), PS(None, ("mp1", "mp2"))),
-            (("attention/wo/kernel"), PS(("mp1", "mp2"), None)),
+            ("attention/(wq|wk|wv)/kernel", PS(None, ("mp1", "mp2"))),
+            ("attention/wo/kernel", PS(("mp1", "mp2"), None)),
             # mlp
-            (("feed_forward/w1/kernel"), PS(None, ("mp1", "mp2"))),
-            (("feed_forward/w2/kernel"), PS(("mp1", "mp2"), None)),
-            (("feed_forward/w3/kernel"), PS(None, ("mp1", "mp2"))),
+            ("feed_forward/w1/kernel", PS(None, ("mp1", "mp2"))),
+            ("feed_forward/w2/kernel", PS(("mp1", "mp2"), None)),
+            ("feed_forward/w3/kernel", PS(None, ("mp1", "mp2"))),
             # layer norms
-            (("attention_norm/kernel"), PS(None)),
-            (("ffn_norm/kernel"), PS(None)),
+            ("attention_norm/kernel", PS(None)),
+            ("ffn_norm/kernel", PS(None)),
             # output head
-            (("transformer/ln_f/kernel"), PS(None)),
-            (("lm_head/kernel"), PS(None, ("mp1", "mp2"))),
+            ("transformer/ln_f/kernel", PS(None)),
+            ("lm_head/kernel", PS(None, ("mp1", "mp2"))),
             ('.*', PS(None)),
         ]
 
@@ -420,6 +420,10 @@ class FlaxLLaMAAttention(nn.Module):
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
 
+        xq = with_sharding_constraint(xq, PS("dp", None, ("mp1", "mp2")))
+        xk = with_sharding_constraint(xk, PS("dp", None, ("mp1", "mp2")))
+        xv = with_sharding_constraint(xv, PS("dp", None, ("mp1", "mp2")))
+
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
@@ -572,25 +576,8 @@ class FlaxLLaMABlock(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask: Optional[jnp.ndarray] = None,
     ):
-
-        if not deterministic and self.config.fcm_max_ratio > 0:
-            # Apply forgetful causal mask
-            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
-            fcm_ratio = jax.random.uniform(
-                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
-                minval=self.config.fcm_min_ratio,
-                maxval=self.config.fcm_max_ratio
-            )
-            fcm_mask = jax.random.uniform(
-                self.make_rng('fcm'),
-                shape=(batch_size, 1, seq_length, seq_length)
-            ) > fcm_ratio
-            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
-            fcm_mask = fcm_mask.astype('bool')
-        else:
-            fcm_mask = None
-
         attn_outputs = self.attention(
             self.attention_norm(hidden_states),
             attention_mask=attention_mask,
@@ -791,6 +778,23 @@ class FlaxLLaMABlockCollection(nn.Module):
         all_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
 
+        if not deterministic and self.config.fcm_max_ratio > 0:
+            # Apply forgetful causal mask
+            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
+            fcm_ratio = jax.random.uniform(
+                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
+                minval=self.config.fcm_min_ratio,
+                maxval=self.config.fcm_max_ratio
+            )
+            fcm_mask = jax.random.uniform(
+                self.make_rng('fcm'),
+                shape=(batch_size, 1, seq_length, seq_length)
+            ) > fcm_ratio
+            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
+            fcm_mask = fcm_mask.astype('bool')
+        else:
+            fcm_mask = None
+
         for block in self.blocks:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -802,6 +806,7 @@ class FlaxLLaMABlockCollection(nn.Module):
                 deterministic,
                 init_cache,
                 output_attentions,
+                fcm_mask,
             )
             hidden_states = layer_outputs[0]
 

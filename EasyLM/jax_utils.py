@@ -109,6 +109,7 @@ def get_jax_mp_mesh(mp_axis_dims, mp_axis_prefix='mp', dp_axis_name='dp'):
     if isinstance(mp_axis_dims, int):
         mp_axis_dims = [mp_axis_dims]
     elif isinstance(mp_axis_dims, str):
+        mp_axis_dims = mp_axis_dims.strip().replace(' ', '')
         mp_axis_dims = [int(x) for x in mp_axis_dims.split(',')]
 
     device_count = jax.device_count()
