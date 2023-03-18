@@ -54,6 +54,7 @@ class TextProcessor(object):
         config.fields = ''
         config.subfield_separator = ' '
         config.add_eos_token = True
+        config.prepend_text = ''
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
         return config
@@ -73,7 +74,7 @@ class TextProcessor(object):
         else:
             fields = self.config.fields.split(',')
 
-        for field in fields:
+        for i, field in enumerate(fields):
             if field.startswith('[') and field.endswith(']'):
                 # No loss for this field.
                 field = field[1:-1]
@@ -92,6 +93,8 @@ class TextProcessor(object):
                 text = self.config.subfield_separator.join(
                     [example[subfield] for subfield in subfields]
                 )
+                if i == 0:
+                    text = self.config.prepend_text + text
                 tokens = self.tokenizer.encode(text)
                 token_buffer.extend(tokens)
                 loss_mask_buffer.extend([mask for _ in range(len(tokens))])

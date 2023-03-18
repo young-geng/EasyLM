@@ -27,6 +27,7 @@ class LMServer(object):
         config.logging = False
         config.pre_compile = 'loglikelihood'
         config.greedy_until_max_length = 5000
+        config.chat_prepend_text = ''
         config.chat_user_prefix = ''
         config.chat_user_suffix = ''
         config.chat_lm_prefix = ''
@@ -245,7 +246,7 @@ class LMServer(object):
                 + prompt + self.config.chat_user_suffix
                 + self.config.chat_lm_prefix
             )
-            response = self.generate([context])[0]
+            response = self.generate([self.config.chat_prepend_text + context])[0]
             context = context + response + self.config.chat_lm_suffix
             output = {'context': context, 'response': response}
         return output
