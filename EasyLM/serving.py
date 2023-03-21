@@ -4,6 +4,8 @@ from functools import partial
 import re
 import os
 from threading import Lock
+import urllib
+import time
 
 import absl.logging
 from tqdm import tqdm, trange
@@ -12,6 +14,8 @@ import mlxu
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from flask import Flask, request
+import requests
+from requests.exceptions import Timeout, ConnectionError
 
 
 class LMServer(object):
@@ -283,3 +287,74 @@ class LMServer(object):
 
     def run(self):
         self.run_server()
+
+
+class LMClient(object):
+    """ A simple client for the LM server. """
+
+    @staticmethod
+    def get_default_config(updates=None):
+        config = ConfigDict()
+        config.url = 'http://localhost:5007'
+        config.wait_for_ready = True
+        config.dummy = False
+
+        if updates is not None:
+            config.update(ConfigDict(updates).copy_and_resolve_references())
+        return config
+
+    def __init__(self, config=None):
+        self.config = self.get_default_config(config)
+        if self.config.wait_for_ready:
+            self.wait_for_ready()
+
+    def wait_for_ready(self):
+        if self.config.dummy:
+            return
+        while True:
+            try:
+                requests.get(urllib.parse.urljoin(self.config.url, 'ready'))
+                return
+            except (Timeout, ConnectionError) as e:
+                time.sleep(10)
+
+    def loglikelihood(self, prefix, text):
+        prefix, text = list(prefix), list(text)
+        if self.config.dummy:
+            return [-1.0 for _ in text], [False for _ in text]
+
+        response = requests.post(
+            urllib.parse.urljoin(self.config.url, 'loglikelihood'),
+            json={'prefix_text': prefix, 'text': text}
+        ).json()
+        return response['log_likelihood'], response['is_greedy']
+
+    def loglikelihood_rolling(self, text):
+        text = list(text)
+        if self.config.dummy:
+            return [-1.0 for _ in text], [False for _ in text]
+        response = requests.post(
+            urllib.parse.urljoin(self.config.url, 'loglikelihood-rolling'),
+            json={'text': text}
+        ).json()
+        return response['log_likelihood'], response['is_greedy']
+
+    def greedy_until(self, prefix, until):
+        prefix, until = list(prefix), list(until)
+        if self.config.dummy:
+            return until
+        response = requests.post(
+            urllib.parse.urljoin(self.config.url, 'greedy-until'),
+            json={'prefix_text': prefix, 'until': until}
+        ).json()
+        return response['output_text']
+
+    def generate(self, prefix):
+        prefix = list(prefix)
+        if self.config.dummy:
+            return ['' for _ in prefix]
+        response = requests.post(
+            urllib.parse.urljoin(self.config.url, 'generate'),
+            json={'prefix_text': prefix}
+        ).json()
+        return response['output_text']
