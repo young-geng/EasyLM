@@ -1,5 +1,5 @@
 import os
-import time
+import math
 from typing import Any, Mapping, Text, Tuple, Union, NamedTuple
 from functools import partial
 import re
@@ -11,8 +11,10 @@ import flax
 import jax
 import jax.numpy as jnp
 from jax.experimental import PartitionSpec as PS
+from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
 from jax.experimental.maps import Mesh
 from jax.experimental.pjit import pjit
+from jax.interpreters import pxla
 import numpy as np
 from absl import logging
 from flax import jax_utils
@@ -102,16 +104,60 @@ def set_random_seed(seed):
     init_rng(seed)
 
 
-def get_jax_mp_mesh(mp_axis_dim, mp_axis_name='mp', dp_axis_name='dp'):
+def get_jax_mp_mesh(mp_axis_dims, mp_axis_prefix='mp', dp_axis_name='dp'):
     """ Return a 2D mesh for (MP, DP) partitioning. """
+    if isinstance(mp_axis_dims, int):
+        mp_axis_dims = [mp_axis_dims]
+    elif isinstance(mp_axis_dims, str):
+        mp_axis_dims = mp_axis_dims.strip().replace(' ', '')
+        mp_axis_dims = [int(x) for x in mp_axis_dims.split(',')]
+
     device_count = jax.device_count()
-    if mp_axis_dim <= 0:
-        mp_axis_dim = device_count
-    assert device_count % mp_axis_dim == 0
-    return Mesh(
-        np.array(jax.devices()).reshape(-1, mp_axis_dim),
-        (dp_axis_name, mp_axis_name)
-    )
+    mp_axis_dims = [x if x > 0 else device_count for x in mp_axis_dims]
+
+    total_mp_dims = np.prod(mp_axis_dims)
+    assert total_mp_dims <= device_count and device_count % total_mp_dims == 0
+
+    axis_names = [dp_axis_name]
+    if len(mp_axis_dims) == 1:
+        axis_names.append(mp_axis_prefix)
+    else:
+        for i in range(1, len(mp_axis_dims) + 1):
+            axis_names.append(f'{mp_axis_prefix}{i}')
+
+    return Mesh(np.array(jax.devices()).reshape(-1, *mp_axis_dims), axis_names)
+
+
+def names_in_current_mesh(*names):
+    """ Check if current mesh axes contain these names. """
+    mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+    return set(names) <= set(mesh_axis_names)
+
+
+def get_names_from_parition_spec(partition_specs):
+    """ Return axis names from partition specs. """
+    names = set()
+    if isinstance(partition_specs, dict):
+        partition_specs = partition_specs.values()
+    for item in partition_specs:
+        if item is None:
+            continue
+        elif isinstance(item, str):
+            names.add(item)
+        else:
+            names.update(get_names_from_parition_spec(item))
+
+    return list(names)
+
+
+def with_sharding_constraint(x, partition_specs):
+    """ A smarter version of with_sharding_constraint that only applies the
+        constraint if the current mesh contains the axes in the partition specs.
+    """
+    axis_names = get_names_from_parition_spec(partition_specs)
+    if names_in_current_mesh(*axis_names):
+        x = _with_sharding_constraint(x, partition_specs)
+    return x
 
 
 def wrap_function_with_rng(rng):
@@ -215,6 +261,15 @@ def get_float_dtype_by_name(dtype):
         'fp32': jnp.float32,
         'fp64': jnp.float64,
     }[dtype]
+
+
+def float_to_dtype(tree, dtype):
+    float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
+    def to_dtype(x):
+        if getattr(x, 'dtype', None) in float_dtypes:
+            x = x.astype(dtype)
+        return x
+    return jax.tree_util.tree_map(to_dtype, tree)
 
 
 def flatten_tree(xs, is_leaf=None, sep=None):

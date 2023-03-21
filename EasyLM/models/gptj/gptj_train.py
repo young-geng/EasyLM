@@ -181,7 +181,8 @@ def main(argv):
     sharded_create_trainstate_from_params = pjit(
         create_trainstate_from_params,
         in_axis_resources=(train_state_partition.params, ),
-        out_axis_resources=train_state_partition
+        out_axis_resources=train_state_partition,
+        donate_argnums=(0, ),
     )
 
     sharded_train_step = pjit(

@@ -8,9 +8,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jax.experimental import PartitionSpec
-from jax.experimental.pjit import with_sharding_constraint
-from jax.interpreters import pxla
+from jax.experimental import PartitionSpec as PS
 import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask
@@ -29,6 +27,8 @@ from transformers.utils import add_start_docstrings, add_start_docstrings_to_mod
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
+
+from EasyLM.jax_utils import with_sharding_constraint
 
 
 LLAMA_STANDARD_CONFIGS = {
@@ -146,6 +146,8 @@ class LLaMAConfig(PretrainedConfig):
         attn_pdrop=0.0,
         tie_word_embeddings=False,
         gradient_checkpointing=True,
+        fcm_min_ratio=0.0,
+        fcm_max_ratio=0.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -161,6 +163,8 @@ class LLaMAConfig(PretrainedConfig):
         self.embd_pdrop = embd_pdrop
         self.attn_pdrop = attn_pdrop
         self.gradient_checkpointing = gradient_checkpointing
+        self.fcm_min_ratio = fcm_min_ratio
+        self.fcm_max_ratio = fcm_max_ratio
         super().__init__(
             # pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -187,21 +191,21 @@ class LLaMAConfig(PretrainedConfig):
         """
         return [
             # embeddings
-            (("transformer/wte/embedding"), PartitionSpec("mp", None)),
+            ("transformer/wte/embedding", PS(("mp1", "mp2"), None)),
             # atention
-            (("attention/(wq|wk|wv)/kernel"), PartitionSpec(None, "mp")),
-            (("attention/wo/kernel"), PartitionSpec("mp", None)),
+            ("attention/(wq|wk|wv)/kernel", PS(None, ("mp1", "mp2"))),
+            ("attention/wo/kernel", PS(("mp1", "mp2"), None)),
             # mlp
-            (("feed_forward/w1/kernel"), PartitionSpec(None, "mp")),
-            (("feed_forward/w2/kernel"), PartitionSpec("mp", None)),
-            (("feed_forward/w3/kernel"), PartitionSpec(None, "mp")),
+            ("feed_forward/w1/kernel", PS(None, ("mp1", "mp2"))),
+            ("feed_forward/w2/kernel", PS(("mp1", "mp2"), None)),
+            ("feed_forward/w3/kernel", PS(None, ("mp1", "mp2"))),
             # layer norms
-            (("attention_norm/kernel"), PartitionSpec(None)),
-            (("ffn_norm/kernel"), PartitionSpec(None)),
+            ("attention_norm/kernel", PS(None)),
+            ("ffn_norm/kernel", PS(None)),
             # output head
-            (("transformer/ln_f/kernel"), PartitionSpec(None)),
-            (("lm_head/kernel"), PartitionSpec(None, "mp")),
-            ('.*', PartitionSpec(None)),
+            ("transformer/ln_f/kernel", PS(None)),
+            ("lm_head/kernel", PS(None, ("mp1", "mp2"))),
+            ('.*', PS(None)),
         ]
 
     @staticmethod
@@ -242,7 +246,7 @@ class LLaMAConfig(PretrainedConfig):
             return cls.from_dict(LLAMA_STANDARD_CONFIGS[path])
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
-            return cls.from_dict(load_pickle(load_path)['gptj_config'])
+            return cls.from_dict(load_pickle(load_path)['llama_config'])
         elif load_type == 'json':
             with open_file(load_path, 'r') as fin:
                 raw_config = fin.read()
@@ -412,19 +416,23 @@ class FlaxLLaMAAttention(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask=None,
     ):
         xq, xk, xv = self.wq(hidden_states), self.wk(hidden_states), self.wv(hidden_states)
+
+        xq = with_sharding_constraint(xq, PS("dp", None, ("mp1", "mp2")))
+        xk = with_sharding_constraint(xk, PS("dp", None, ("mp1", "mp2")))
+        xv = with_sharding_constraint(xv, PS("dp", None, ("mp1", "mp2")))
 
         xq = self._split_heads(xq)
         xk = self._split_heads(xk)
         xv = self._split_heads(xv)
 
-        freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
+        xq = with_sharding_constraint(xq, PS("dp", None, "mp1", "mp2"))
+        xk = with_sharding_constraint(xk, PS("dp", None, "mp1", "mp2"))
+        xv = with_sharding_constraint(xv, PS("dp", None, "mp1", "mp2"))
 
-        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
-            xq = with_sharding_constraint(xq, PartitionSpec("dp", None, None, "mp"))
-            xk = with_sharding_constraint(xk, PartitionSpec("dp", None, None, "mp"))
+        freqs_cis = jnp.take(self.freqs_cis, position_ids, axis=0)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
@@ -443,7 +451,7 @@ class FlaxLLaMAAttention(nn.Module):
         causal_mask = jnp.broadcast_to(causal_mask, (batch_size,) + causal_mask.shape[1:])
 
         attention_mask = jnp.broadcast_to(jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape)
-        attention_mask = combine_masks(attention_mask, causal_mask)
+        attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
 
         dropout_rng = None
         if not deterministic and self.config.attn_pdrop > 0.0:
@@ -472,19 +480,18 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             precision=self.precision,
         )
-
-        mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
-        if "dp" in mesh_axis_names and "mp" in mesh_axis_names:
-            attn_weights = with_sharding_constraint(
-                attn_weights, PartitionSpec("dp", None, None, "mp")
-            )
+        attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp1", None, None))
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, "mp1", "mp2"))
         attn_output = self._merge_heads(attn_output)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.wo(attn_output)
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-
+        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
+        outputs = with_sharding_constraint(outputs, PS("dp", None, ("mp1", "mp2")))
         return outputs
 
 
@@ -569,6 +576,7 @@ class FlaxLLaMABlock(nn.Module):
         deterministic: bool = True,
         init_cache: bool = False,
         output_attentions: bool = False,
+        fcm_mask: Optional[jnp.ndarray] = None,
     ):
         attn_outputs = self.attention(
             self.attention_norm(hidden_states),
@@ -577,6 +585,7 @@ class FlaxLLaMABlock(nn.Module):
             deterministic=deterministic,
             init_cache=init_cache,
             output_attentions=output_attentions,
+            fcm_mask=fcm_mask,
         )
         attn_output = attn_outputs[0]
         hidden_states = hidden_states + attn_output
@@ -746,7 +755,10 @@ class FlaxLLaMABlockCollection(nn.Module):
     def setup(self):
         block = FlaxLLaMABlock
         if self.config.gradient_checkpointing:
-            FlaxLLaMACheckpointBlock = remat(block, static_argnums=(3, 4, 5))
+            FlaxLLaMACheckpointBlock = remat(
+                block, static_argnums=(3, 4, 5),
+                policy=jax.checkpoint_policies.nothing_saveable
+            )
             block = FlaxLLaMACheckpointBlock
         self.blocks = [
             block(self.config, name=str(i), dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision) for i in range(self.config.num_hidden_layers)
@@ -766,6 +778,23 @@ class FlaxLLaMABlockCollection(nn.Module):
         all_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
 
+        if not deterministic and self.config.fcm_max_ratio > 0:
+            # Apply forgetful causal mask
+            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
+            fcm_ratio = jax.random.uniform(
+                self.make_rng('fcm'), shape=(batch_size, 1, 1, 1),
+                minval=self.config.fcm_min_ratio,
+                maxval=self.config.fcm_max_ratio
+            )
+            fcm_mask = jax.random.uniform(
+                self.make_rng('fcm'),
+                shape=(batch_size, 1, seq_length, seq_length)
+            ) > fcm_ratio
+            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
+            fcm_mask = fcm_mask.astype('bool')
+        else:
+            fcm_mask = None
+
         for block in self.blocks:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -777,6 +806,7 @@ class FlaxLLaMABlockCollection(nn.Module):
                 deterministic,
                 init_cache,
                 output_attentions,
+                fcm_mask,
             )
             hidden_states = layer_outputs[0]
 

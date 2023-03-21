@@ -86,7 +86,7 @@ EasyLM has builtin support for [lm-eval-harness](https://github.com/EleutherAI/l
 which can evaluate the language model on a variety of tasks. Use the following
 command to evaluate the the langauge model served with the HTTP server:
 ```shell
-python -m EasyLM.scripts.lm_eval \
+python -m EasyLM.scripts.lm_eval_harness \
     --lm_server_url='http://localhost:5007/' \
     --tasks='wsc,piqa,winogrande,openbookqa,logiqa' \
     --shots=0
