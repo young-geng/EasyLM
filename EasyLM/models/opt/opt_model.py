@@ -16,6 +16,9 @@
 
 from functools import partial
 from typing import Optional, Tuple
+import json
+
+import numpy as np
 
 import flax.linen as nn
 import jax
@@ -33,13 +36,13 @@ from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from transformers.generation.flax_logits_process import FlaxLogitsProcessorList
 from transformers import AutoTokenizer
-from jax.experimental.pjit import with_sharding_constraint
 from jax.experimental import PartitionSpec
-from jax.interpreters import pxla
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
-from mlxu import function_args_to_config, load_pickle
+from mlxu import function_args_to_config, load_pickle, open_file
+
+from EasyLM.jax_utils import with_sharding_constraint
 
 
 remat = nn_partitioning.remat
@@ -293,17 +296,19 @@ class OPTConfig(PretrainedConfig):
         return config
 
     @classmethod
-    def get_tokenizer(cls, config, padding_side='left'):
+    def get_tokenizer(cls, config, padding_side='left', truncation_side='right'):
         config = cls.get_tokenizer_config(config)
         return AutoTokenizer.from_pretrained(
-            config.name, padding_side=padding_side,
+            config.name,
+            padding_side=padding_side,
+            truncation_side=truncation_side,
         )
 
     @staticmethod
-    def load_pretrained(name):
+    def load_pretrained(name, dtype=jnp.float32):
         with jax.default_device(jax.devices("cpu")[0]):
             params = FlaxOPTForCausalLM.from_pretrained(
-                name, dtype=jnp.float32, _do_init=False
+                name, _do_init=False, dtype=dtype
             )[1]
             params = freeze({'params': params})
         return params
@@ -312,7 +317,11 @@ class OPTConfig(PretrainedConfig):
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
-            return load_pickle(load_path)['opt_config']
+            return cls.from_dict(load_pickle(load_path)['gptj_config'])
+        elif load_type == 'json':
+            with open_file(load_path, 'r') as fin:
+                raw_config = fin.read()
+            return cls.from_dict(json.loads(raw_config))
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)
         else:

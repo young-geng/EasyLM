@@ -137,7 +137,6 @@ class HuggingfaceDataset(object):
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
-        fields = self.config.field.split(',')
         while True:
             token_buffer = []
             loss_mask_buffer = []
