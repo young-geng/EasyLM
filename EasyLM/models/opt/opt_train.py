@@ -192,7 +192,7 @@ def main(argv):
         donate_argnums=(0, 1),
     )
 
-    shareded_eval_step = pjit(
+    sharded_eval_step = pjit(
         eval_step,
         in_axis_resources=(train_state_partition, PS(), PS()),
         out_axis_resources=(PS(), PS()),
@@ -256,7 +256,7 @@ def main(argv):
                 if FLAGS.eval_steps > 0:
                     eval_metric_list = []
                     for _ in range(FLAGS.eval_steps):
-                        sharded_rng, eval_metrics = shareded_eval_step(
+                        sharded_rng, eval_metrics = sharded_eval_step(
                             train_state, sharded_rng, next(eval_iterator)
                         )
                         eval_metric_list.append(eval_metrics)
