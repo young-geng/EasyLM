@@ -8,7 +8,6 @@ from threading import Lock
 
 from tqdm import tqdm, trange
 import numpy as np
-from flask import Flask, request
 import mlxu
 
 import jax

@@ -20,7 +20,6 @@ dependencies:
     - cudatoolkit=11.3
     - cuda-nvcc=11.3
     - cudnn
-    - flask
     - sentencepiece
     - pip:
         - flax==0.6.0
@@ -43,3 +42,7 @@ dependencies:
         - jupyter_http_over_ws
         - lm-eval==0.3.0
         - mlxu==0.1.9
+        - pydantic
+        - fastapi
+        - uvicorn
+        - gradio

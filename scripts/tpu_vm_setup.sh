@@ -30,14 +30,16 @@ wandb==0.13.5
 gcsfs==2022.11.0
 requests
 typing-extensions
-flask
 lm-eval==0.3.0
 mlxu==0.1.9
 sentencepiece
+pydantic
+fastapi
+uvicorn
+gradio
 EndOfFile
 
 pip install --upgrade -r $HOME/tpu_requirements.txt
-pip install flask
 
 
 # vim configurations
