@@ -238,27 +238,45 @@ class LMServer(object):
 
     def create_chat_app(self):
         with gr.Blocks() as gradio_chatbot:
-            chatbot = gr.Chatbot()
-            msg = gr.Textbox()
+            gr.Markdown('# [Powered by EasyLM](https://github.com/young-geng/EasyLM)')
+            chatbot = gr.Chatbot(label='Chat history')
+            msg = gr.Textbox(
+                placeholder='Press enter to send message',
+                show_label=False
+            )
             clear = gr.Button("Clear")
             context_state = gr.State('')
 
             def user_fn(user_message, history):
-                return "", history + [[user_message, None]]
+                return {
+                    msg: gr.update(value='', interactive=False),
+                    clear: gr.update(interactive=False),
+                    chatbot: history + [[user_message, None]],
+                }
 
             def model_fn(history, context):
-                response, context = self.process_chat(history[-1][0], context)
-                history[-1][1] = response
-                return history, context
+                history[-1][1], context = self.process_chat(history[-1][0], context)
+                return {
+                    msg: gr.update(value='', interactive=True),
+                    clear: gr.update(interactive=True),
+                    chatbot: history,
+                    context_state: context,
+                }
 
             def clear_fn():
-                return None, ''
+                return {
+                    chatbot: None,
+                    msg: '',
+                    context_state: '',
+                }
 
-            msg.submit(user_fn, [msg, chatbot], [msg, chatbot], queue=False).then(
-                model_fn, [chatbot, context_state], [chatbot, context_state],
+            all_components = [msg, chatbot, context_state, clear]
+
+            msg.submit(user_fn, [msg, chatbot], all_components, queue=False).then(
+                model_fn, [chatbot, context_state], all_components,
                 queue=True
             )
-            clear.click(clear_fn, None, [chatbot, context_state], queue=False)
+            clear.click(clear_fn, None, all_components, queue=False)
 
         gradio_chatbot.queue(concurrency_count=1)
         return gradio_chatbot
