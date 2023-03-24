@@ -21,10 +21,15 @@ import requests
 from requests.exceptions import Timeout, ConnectionError
 
 
-class LMInferenceRequest(BaseModel):
+class InferenceRequest(BaseModel):
     prefix_text: Optional[List[str]] = None
     text: Optional[List[str]] = None
     until: Optional[List[str]] = None
+
+
+class ChatRequest(BaseModel):
+    prompt: str
+    context: str = ''
 
 
 class LMServer(object):
@@ -45,6 +50,7 @@ class LMServer(object):
         config.chat_user_suffix = ''
         config.chat_lm_prefix = ''
         config.chat_lm_suffix = ''
+        config.notes = ''
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -58,6 +64,7 @@ class LMServer(object):
         self.app.post('/loglikelihood-rolling')(self.serve_loglikelihood_rolling)
         self.app.post('/generate')(self.serve_generate)
         self.app.post('/greedy-until')(self.serve_greedy_until)
+        self.app.post('/chat')(self.serve_chat)
         self.app.get('/ready')(self.serve_ready)
         self.app = gr.mount_gradio_app(self.app, self.create_chat_app(), '/')
 
@@ -83,7 +90,7 @@ class LMServer(object):
             return x.tolist()
         return x
 
-    def serve_loglikelihood(self, data: LMInferenceRequest):
+    def serve_loglikelihood(self, data: InferenceRequest):
         with self.lock:
             if self.config.logging:
                 absl.logging.info(
@@ -131,7 +138,7 @@ class LMServer(object):
 
         return output
 
-    def serve_loglikelihood_rolling(self, data: LMInferenceRequest):
+    def serve_loglikelihood_rolling(self, data: InferenceRequest):
         with self.lock:
             if self.config.logging:
                 absl.logging.info(
@@ -171,7 +178,7 @@ class LMServer(object):
 
         return output
 
-    def serve_generate(self, data: LMInferenceRequest):
+    def serve_generate(self, data: InferenceRequest):
         with self.lock:
             if self.config.logging:
                 absl.logging.info(
@@ -203,7 +210,7 @@ class LMServer(object):
                 )
         return output
 
-    def serve_greedy_until(self, data: LMInferenceRequest):
+    def serve_greedy_until(self, data: InferenceRequest):
         with self.lock:
             if self.config.logging:
                 absl.logging.info(
@@ -236,21 +243,29 @@ class LMServer(object):
                 )
         return output
 
+    def serve_chat(self, data: ChatRequest):
+        response, context = self.process_chat(data.prompt, data.context)
+        return {'response': response, 'context': context}
+
     def create_chat_app(self):
         with gr.Blocks() as gradio_chatbot:
-            gr.Markdown('# [Powered by EasyLM](https://github.com/young-geng/EasyLM)')
+            gr.Markdown('# Chatbot Powered by [EasyLM](https://github.com/young-geng/EasyLM)')
+            gr.Markdown(self.config.notes)
             chatbot = gr.Chatbot(label='Chat history')
             msg = gr.Textbox(
                 placeholder='Press enter to send message',
                 show_label=False
             )
-            clear = gr.Button("Clear")
+            with gr.Row():
+                send = gr.Button('Send')
+                clear = gr.Button('Reset')
             context_state = gr.State('')
 
             def user_fn(user_message, history):
                 return {
                     msg: gr.update(value='', interactive=False),
                     clear: gr.update(interactive=False),
+                    send: gr.update(interactive=False),
                     chatbot: history + [[user_message, None]],
                 }
 
@@ -259,6 +274,7 @@ class LMServer(object):
                 return {
                     msg: gr.update(value='', interactive=True),
                     clear: gr.update(interactive=True),
+                    send: gr.update(interactive=True),
                     chatbot: history,
                     context_state: context,
                 }
@@ -270,9 +286,13 @@ class LMServer(object):
                     context_state: '',
                 }
 
-            all_components = [msg, chatbot, context_state, clear]
+            all_components = [msg, chatbot, context_state, clear, send]
 
             msg.submit(user_fn, [msg, chatbot], all_components, queue=False).then(
+                model_fn, [chatbot, context_state], all_components,
+                queue=True
+            )
+            send.click(user_fn, [msg, chatbot], all_components, queue=False).then(
                 model_fn, [chatbot, context_state], all_components,
                 queue=True
             )
@@ -394,3 +414,12 @@ class LMClient(object):
             json={'prefix_text': prefix}
         ).json()
         return response['output_text']
+
+    def chat(self, prompt, context):
+        if self.config.dummy:
+            return ''
+        response = requests.post(
+            urllib.parse.urljoin(self.config.url, 'chat'),
+            json={'prompt': prompt, 'context': context}
+        ).json()
+        return response['response'], response['context']
