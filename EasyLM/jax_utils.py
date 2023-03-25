@@ -21,6 +21,7 @@ from flax import jax_utils
 from flax.training.train_state import TrainState
 from flax.core import FrozenDict
 import optax
+from transformers import FlaxLogitsWarper
 
 
 class JaxRNG(object):
@@ -47,6 +48,15 @@ class JaxRNG(object):
             split_rngs = jax.random.split(self.rng, num=len(keys) + 1)
             self.rng = split_rngs[0]
             return {key: val for key, val in zip(keys, split_rngs[1:])}
+
+
+class FlaxTemperatureLogitsWarper(FlaxLogitsWarper):
+    """ JIT traceable version of FlaxLogitsWarper that performs temperature scaling."""
+    def __init__(self, temperature):
+        self.temperature = temperature
+
+    def __call__(self, input_ids, scores, cur_len):
+        return scores / jnp.clip(self.temperature, a_min=1e-8)
 
 
 def make_shard_and_gather_fns(partition_specs, dtype_specs=None):
@@ -366,3 +376,4 @@ def get_weight_decay_mask(exclusions):
 def tree_apply(fns, tree):
     """ Apply a pytree of functions to the pytree. """
     return jax.tree_util.tree_map(lambda fn, x: fn(x), fns, tree)
+

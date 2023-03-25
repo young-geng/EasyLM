@@ -19,12 +19,14 @@ from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
 import optax
+from transformers import GenerationConfig, FlaxLogitsProcessorList
 
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
     JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules, tree_apply,
-    set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns
+    set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
+    FlaxTemperatureLogitsWarper
 )
 from EasyLM.models.gptj.gptj_model import (
     GPTJConfig, FlaxGPTJForCausalLMModule, FlaxGPTJForCausalLM
@@ -41,7 +43,6 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     top_k=50,
     top_p=1.0,
     do_sample=True,
-    temperature=1.0,
     num_beams=1,
     loglikelihood_add_bos_token=False,
     load_gptj_config='',
@@ -122,10 +123,10 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS()),
+        in_axis_resources=(model_ps, PS(), PS(), PS()),
         out_axis_resources=(PS(), PS())
     )
-    def forward_generate(params, rng, batch):
+    def forward_generate(params, rng, batch, temperature):
         batch = with_sharding_constraint(batch, PS('dp'))
         rng_generator = JaxRNG(rng)
         output = hf_model.generate(
@@ -133,15 +134,19 @@ def main(argv):
             attention_mask=batch['attention_mask'],
             params=params['params'],
             prng_key=rng_generator(),
-            max_length=FLAGS.seq_length,
-            pad_token_id=tokenizer.eos_token_id,
-            bos_token_id=tokenizer.bos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            temperature=FLAGS.temperature,
-            top_k=FLAGS.top_k,
-            top_p=FLAGS.top_p,
-            num_beams=FLAGS.num_beams,
-            do_sample=FLAGS.do_sample,
+            logits_processor=FlaxLogitsProcessorList(
+                [FlaxTemperatureLogitsWarper(temperature)]
+            ),
+            generation_config=GenerationConfig(
+                max_length=FLAGS.seq_length,
+                pad_token_id=tokenizer.eos_token_id,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                do_sample=FLAGS.do_sample,
+                num_beams=FLAGS.num_beams,
+                top_k=FLAGS.top_k,
+                top_p=FLAGS.top_p,
+            )
         ).sequences[:, batch['input_tokens'].shape[1]:]
         return output, rng_generator()
 
@@ -290,7 +295,7 @@ def main(argv):
             return total_loglikelihood, total_is_greedy
 
         @staticmethod
-        def generate(text):
+        def generate(text, temperature):
             nonlocal sharded_rng
             inputs = prefix_tokenizer(
                 text,
@@ -305,7 +310,7 @@ def main(argv):
             )
             with mesh:
                 output, sharded_rng = forward_generate(
-                    params, sharded_rng, batch
+                    params, sharded_rng, batch, temperature
                 )
                 output = jax.device_get(output)
             output_text = []

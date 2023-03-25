@@ -25,11 +25,13 @@ class InferenceRequest(BaseModel):
     prefix_text: Optional[List[str]] = None
     text: Optional[List[str]] = None
     until: Optional[List[str]] = None
+    temperature: Optional[float] = None
 
 
 class ChatRequest(BaseModel):
     prompt: str
     context: str = ''
+    temperature: Optional[float] = None
 
 
 class LMServer(object):
@@ -44,6 +46,7 @@ class LMServer(object):
         config.batch_size = 1
         config.logging = False
         config.pre_compile = 'loglikelihood'
+        config.default_temperature = 1.0
         config.greedy_until_max_length = 5000
         config.chat_prepend_text = ''
         config.chat_user_prefix = ''
@@ -77,7 +80,7 @@ class LMServer(object):
         raise NotImplementedError()
 
     @staticmethod
-    def generate(text):
+    def generate(text, temperature):
         raise NotImplementedError()
 
     @staticmethod
@@ -89,6 +92,9 @@ class LMServer(object):
         if isinstance(x, np.ndarray):
             return x.tolist()
         return x
+
+    def serve_ready(self):
+        return 'Ready!\n'
 
     def serve_loglikelihood(self, data: InferenceRequest):
         with self.lock:
@@ -187,6 +193,9 @@ class LMServer(object):
                 )
             prefix_text = data.prefix_text
 
+            if data.temperature is None:
+                data.temperature = self.config.default_temperature
+
             output_text = []
             for i in trange(0, len(prefix_text), self.config.batch_size, ncols=0):
                 batch_prefix_text = prefix_text[i:i + self.config.batch_size]
@@ -196,12 +205,16 @@ class LMServer(object):
                     extra = self.config.batch_size - batch_size
                     batch_prefix_text.extend(['a' for _ in range(extra)])
 
-                batch_output_text = self.generate(batch_prefix_text)
+                batch_output_text = self.generate(
+                    batch_prefix_text,
+                    temperature=data.temperature,
+                )
                 output_text.extend(self.to_list(batch_output_text)[:batch_size])
 
             output = {
                 'prefix_text': prefix_text,
                 'output_text': output_text,
+                'temperature': data.temperature,
             }
             if self.config.logging:
                 absl.logging.info(
@@ -243,9 +256,31 @@ class LMServer(object):
                 )
         return output
 
+    def process_chat(self, prompt, context, temperature):
+        context = (
+            context + self.config.chat_user_prefix
+            + prompt + self.config.chat_user_suffix
+            + self.config.chat_lm_prefix
+        )
+        response = self.generate(
+            [self.config.chat_prepend_text + context],
+            temperature=temperature,
+        )[0]
+        context = context + response + self.config.chat_lm_suffix
+        return response, context
+
     def serve_chat(self, data: ChatRequest):
-        response, context = self.process_chat(data.prompt, data.context)
-        return {'response': response, 'context': context}
+        if data.temperature is None:
+            data.temperature = self.config.default_temperature
+        response, context = self.process_chat(
+            data.prompt, data.context,
+            temperature=data.temperature,
+        )
+        return {
+            'response': response,
+            'context': context,
+            'temperature': data.temperature,
+        }
 
     def create_chat_app(self):
         with gr.Blocks() as gradio_chatbot:
@@ -253,12 +288,18 @@ class LMServer(object):
             gr.Markdown(self.config.notes)
             chatbot = gr.Chatbot(label='Chat history')
             msg = gr.Textbox(
-                placeholder='Press enter to send message',
+                placeholder='Type your message here...',
                 show_label=False
             )
             with gr.Row():
                 send = gr.Button('Send')
                 clear = gr.Button('Reset')
+
+            temp_slider = gr.Slider(
+                label='Temperature', minimum=0, maximum=2.0,
+                value=self.config.default_temperature
+            )
+
             context_state = gr.State('')
 
             def user_fn(user_message, history):
@@ -269,8 +310,10 @@ class LMServer(object):
                     chatbot: history + [[user_message, None]],
                 }
 
-            def model_fn(history, context):
-                history[-1][1], context = self.process_chat(history[-1][0], context)
+            def model_fn(history, context, temperature):
+                history[-1][1], context = self.process_chat(
+                    history[-1][0], context, temperature
+                )
                 return {
                     msg: gr.update(value='', interactive=True),
                     clear: gr.update(interactive=True),
@@ -286,35 +329,39 @@ class LMServer(object):
                     context_state: '',
                 }
 
-            all_components = [msg, chatbot, context_state, clear, send]
-
-            msg.submit(user_fn, [msg, chatbot], all_components, queue=False).then(
-                model_fn, [chatbot, context_state], all_components,
+            msg.submit(
+                user_fn,
+                inputs=[msg, chatbot],
+                outputs=[msg, clear, send, chatbot],
+                queue=False
+            ).then(
+                model_fn,
+                inputs=[chatbot, context_state, temp_slider],
+                outputs=[msg, clear, send, chatbot, context_state],
                 queue=True
             )
-            send.click(user_fn, [msg, chatbot], all_components, queue=False).then(
-                model_fn, [chatbot, context_state], all_components,
+            send.click(
+                user_fn,
+                inputs=[msg, chatbot],
+                outputs=[msg, clear, send, chatbot],
+                queue=False
+            ).then(
+                model_fn,
+                inputs=[chatbot, context_state, temp_slider],
+                outputs=[msg, clear, send, chatbot, context_state],
                 queue=True
             )
-            clear.click(clear_fn, None, all_components, queue=False)
+            clear.click(
+                clear_fn,
+                inputs=None,
+                outputs=[chatbot, msg, context_state],
+                queue=False
+            )
 
         gradio_chatbot.queue(concurrency_count=1)
         return gradio_chatbot
 
-    def process_chat(self, prompt, context):
-        context = (
-            context + self.config.chat_user_prefix
-            + prompt + self.config.chat_user_suffix
-            + self.config.chat_lm_prefix
-        )
-        response = self.generate([self.config.chat_prepend_text + context])[0]
-        context = context + response + self.config.chat_lm_suffix
-        return response, context
-
-    def serve_ready(self):
-        return 'Ready!\n'
-
-    def run_server(self):
+    def run(self):
         if self.config.pre_compile != '':
             if self.config.pre_compile == 'all':
                 pre_compile = ['loglikelihood', 'generate', 'greedy_until', 'chat']
@@ -327,22 +374,18 @@ class LMServer(object):
                     self.loglikelihood(pre_compile_data, pre_compile_data)
                     self.loglikelihood_rolling(pre_compile_data)
                 elif task == 'generate':
-                    self.generate(pre_compile_data)
+                    self.generate(pre_compile_data, 1.0)
                 elif task == 'greedy_until':
                     self.greedy_until(
                         pre_compile_data, pre_compile_data,
                         self.config.greedy_until_max_length
                     )
                 elif task == 'chat':
-                    # Compile a batch 1 generate for chat
-                    self.generate(['a'])
+                    self.generate(['a'], 1.0)
                 else:
                     raise ValueError(f'Invalid precompile task: {task}!')
 
         uvicorn.run(self.app, host=self.config.host, port=self.config.port)
-
-    def run(self):
-        self.run_server()
 
 
 class LMClient(object):
