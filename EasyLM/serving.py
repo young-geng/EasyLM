@@ -381,7 +381,7 @@ class LMServer(object):
                         self.config.greedy_until_max_length
                     )
                 elif task == 'chat':
-                    self.generate(['a'], 1.0)
+                    self.process_chat('a', 'a', 1.0)
                 else:
                     raise ValueError(f'Invalid precompile task: {task}!')
 
@@ -448,21 +448,28 @@ class LMClient(object):
         ).json()
         return response['output_text']
 
-    def generate(self, prefix):
+    def generate(self, prefix, temperature=None):
         prefix = list(prefix)
         if self.config.dummy:
             return ['' for _ in prefix]
         response = requests.post(
             urllib.parse.urljoin(self.config.url, 'generate'),
-            json={'prefix_text': prefix}
+            json={
+                'prefix_text': prefix,
+                'temperature': temperature,
+            }
         ).json()
         return response['output_text']
 
-    def chat(self, prompt, context):
+    def chat(self, prompt, context, temperature=None):
         if self.config.dummy:
             return ''
         response = requests.post(
             urllib.parse.urljoin(self.config.url, 'chat'),
-            json={'prompt': prompt, 'context': context}
+            json={
+                'prompt': prompt,
+                'context': context,
+                'temperature': temperature,
+            }
         ).json()
         return response['response'], response['context']
