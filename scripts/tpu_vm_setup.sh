@@ -19,6 +19,7 @@ jax[tpu]==0.3.25
 tensorflow==2.11.0
 flax==0.6.0
 optax==0.1.3
+chex==0.1.5
 distrax==0.1.2
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==1.12.1
