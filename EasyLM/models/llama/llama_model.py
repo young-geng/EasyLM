@@ -436,6 +436,9 @@ class FlaxLLaMAAttention(nn.Module):
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
+        xq = with_sharding_constraint(xq, PS("dp", None, "mp1", "mp2"))
+        xk = with_sharding_constraint(xk, PS("dp", None, "mp1", "mp2"))
+
         query_length, key_length = xq.shape[1], xk.shape[1]
 
         if self.has_variable("cache", "cached_key"):

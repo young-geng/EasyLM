@@ -114,11 +114,11 @@ class HuggingfaceDataset(object):
     @staticmethod
     def get_default_config(updates=None):
         config = ConfigDict()
-        config.seq_length = 1024
         config.path = 'c4'
         config.name = 'en'
         config.split = 'train'
-        config.streaming = True
+        config.streaming = False
+        config.seq_length = 1024
         config.batch_size = 8
 
         if updates is not None:

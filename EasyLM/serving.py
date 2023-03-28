@@ -302,7 +302,7 @@ class LMServer(object):
         }
 
     def create_chat_app(self):
-        with gr.Blocks() as gradio_chatbot:
+        with gr.Blocks(analytics_enabled=False, title='EasyLM Chat') as gradio_chatbot:
             gr.Markdown('# Chatbot Powered by [EasyLM](https://github.com/young-geng/EasyLM)')
             gr.Markdown(self.config.notes)
             chatbot = gr.Chatbot(label='Chat history')
