@@ -138,7 +138,7 @@ def main(argv):
                 [FlaxTemperatureLogitsWarper(temperature)]
             ),
             generation_config=GenerationConfig(
-                max_length=FLAGS.seq_length,
+                max_new_tokens=FLAGS.seq_length - FLAGS.input_length,
                 pad_token_id=tokenizer.eos_token_id,
                 bos_token_id=tokenizer.bos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
@@ -163,12 +163,14 @@ def main(argv):
             attention_mask=batch['attention_mask'],
             params=params['params'],
             prng_key=rng_generator(),
-            max_length=FLAGS.seq_length,
-            pad_token_id=tokenizer.eos_token_id,
-            bos_token_id=tokenizer.bos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            num_beams=1,
-            do_sample=False,
+            generation_config=GenerationConfig(
+                max_new_tokens=FLAGS.seq_length - FLAGS.input_length,
+                pad_token_id=tokenizer.eos_token_id,
+                bos_token_id=tokenizer.bos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                do_sample=False,
+                num_beams=1,
+            )
         ).sequences[:, batch['input_tokens'].shape[1]:]
         return output, rng_generator()
 

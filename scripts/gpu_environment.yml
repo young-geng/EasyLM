@@ -27,7 +27,8 @@ dependencies:
         - chex==0.1.5
         - distrax==0.1.2
         - orbax==0.0.23
-        - transformers==4.26.0
+        - transformers==4.27.2
+        - huggingface_hub==0.13.3
         - datasets==2.9.0
         - einops
         - tensorflow==2.11.0

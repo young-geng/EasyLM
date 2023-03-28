@@ -23,8 +23,9 @@ chex==0.1.5
 distrax==0.1.2
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==1.12.1
-transformers==4.26.0
+transformers==4.27.2
 datasets==2.9.0
+huggingface_hub==0.13.3
 tqdm
 ml_collections
 wandb==0.13.5

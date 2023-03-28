@@ -48,6 +48,10 @@ class LMServer(object):
         config.pre_compile = 'loglikelihood'
         config.default_temperature = 1.0
         config.greedy_until_max_length = 5000
+        config.prepend_to_prefix = ''
+        config.append_to_prefix = ''
+        config.prepend_to_text = ''
+        config.append_to_text = ''
         config.chat_prepend_text = ''
         config.chat_user_prefix = ''
         config.chat_user_suffix = ''
@@ -104,11 +108,17 @@ class LMServer(object):
                     + pprint.pformat(data) + '\n'
                 )
 
-            text = data.text
-            if 'prefix_text' not in data:
-                prefix_text = ['' for _ in text]
-            else:
-                prefix_text = data.prefix_text
+            if data.prefix_text is None:
+                data.prefix_text = ['' for _ in data.text]
+
+            prefix_text = [
+                self.config.prepend_to_prefix + p + self.config.append_to_prefix
+                for p in data.prefix_text
+            ]
+            text = [
+                self.config.prepend_to_text + t + self.config.append_to_text
+                for t in data.text
+            ]
 
             log_likelihood = []
             is_greedy = []
@@ -131,8 +141,8 @@ class LMServer(object):
                 is_greedy.extend(batch_is_greedy[:batch_size])
 
             output = {
-                'prefix_text': prefix_text,
-                'text': text,
+                'prefix_text': data.prefix_text,
+                'text': data.text,
                 'log_likelihood': log_likelihood,
                 'is_greedy': is_greedy,
             }
@@ -152,7 +162,10 @@ class LMServer(object):
                     + pprint.pformat(data) + '\n'
                 )
 
-            text = data.text
+            text = [
+                self.config.prepend_to_text + t + self.config.append_to_text
+                for t in data.text
+            ]
             log_likelihood = []
             is_greedy = []
             for i in trange(0, len(text), self.config.batch_size, ncols=0):
@@ -172,7 +185,7 @@ class LMServer(object):
                 is_greedy.extend(batch_is_greedy[:batch_size])
 
             output = {
-                'text': text,
+                'text': data.text,
                 'log_likelihood': log_likelihood,
                 'is_greedy': is_greedy,
             }
@@ -191,7 +204,10 @@ class LMServer(object):
                     '\n========= Serving Generate Request ========= \n'
                     + pprint.pformat(data) + '\n'
                 )
-            prefix_text = data.prefix_text
+            prefix_text = [
+                self.config.prepend_to_prefix + p + self.config.append_to_prefix
+                for p in data.prefix_text
+            ]
 
             if data.temperature is None:
                 data.temperature = self.config.default_temperature
@@ -212,7 +228,7 @@ class LMServer(object):
                 output_text.extend(self.to_list(batch_output_text)[:batch_size])
 
             output = {
-                'prefix_text': prefix_text,
+                'prefix_text': data.prefix_text,
                 'output_text': output_text,
                 'temperature': data.temperature,
             }
@@ -230,7 +246,10 @@ class LMServer(object):
                     '\n========= Serving Greedy Until Request ========= \n'
                     + pprint.pformat(data) + '\n'
                 )
-            prefix_text = data.prefix_text
+            prefix_text = [
+                self.config.prepend_to_prefix + p + self.config.append_to_prefix
+                for p in data.prefix_text
+            ]
             until = data.until
             max_length = self.config.greedy_until_max_length
 
@@ -244,8 +263,8 @@ class LMServer(object):
                 output_text.extend(self.to_list(batch_output_text)[:batch_size])
 
             output = {
-                'prefix_text': prefix_text,
-                'until': until,
+                'prefix_text': data.prefix_text,
+                'until': data.until,
                 'max_length': max_length,
                 'output_text': output_text,
             }
