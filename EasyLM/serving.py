@@ -283,7 +283,7 @@ class LMServer(object):
         )
         response = self.generate(
             [self.config.chat_prepend_text + context],
-            temperature=temperature,
+            temperature=float(temperature),
         )[0]
         context = context + response + self.config.chat_lm_suffix
         return response, context
