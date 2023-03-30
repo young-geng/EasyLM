@@ -25,8 +25,8 @@ Currently, the following models are supported:
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
 
-## [Documentations](EasyLM/docs/README.md)
-More comprehensive documentations can be found in the [docs](EasyLM/docs) directory.
+## [Documentations](docs/README.md)
+More comprehensive documentations can be found in the [docs](docs/) directory.
 
 
 ## Installation
