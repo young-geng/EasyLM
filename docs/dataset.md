@@ -1,4 +1,4 @@
-# Dataset for EasyLM
+# Dataset
 EasyLM has built in support for the following types of datasets:
 * Huggingface dataset
 * JSON dataset

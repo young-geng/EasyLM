@@ -1,5 +1,4 @@
 # Optimizers
-
 EasyLM provides a number of optimizers for training neural language models. The
 optimizers are implemented in the [optimizer.py](/EasyLM/optimizer.py)
 

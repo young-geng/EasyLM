@@ -25,6 +25,10 @@ Currently, the following models are supported:
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
 
+## [Documentations](EasyLM/docs/README.md)
+More comprehensive documentations can be found in the [docs](EasyLM/docs) directory.
+
+
 ## Installation
 The installation method differs between GPU hosts and Cloud TPU hosts. The first
 step is to pull from GitHub.

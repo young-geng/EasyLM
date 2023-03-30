@@ -1,5 +1,4 @@
-# EasyLM Documentation
-
+# EasyLM Documentations
 EasyLM is a framework for pre-training, fine-tuning, and evaluating and serving
 large language models in JAX/Flax. EasyLM is designed to be easy to use by
 hiding the complexities of distributed model/data parallelism but exposing the
@@ -85,7 +84,7 @@ For more information about the configuration of each module, please refer to the
 ### Configurable Modules
 The following common modules are configurable in EasyLM:
 * [Dataset](dataset.md)
-* Optimizer
+* [Optimizer](optimizer.md)
 * LM server and client
 
 
