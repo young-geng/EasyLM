@@ -12,8 +12,8 @@ import numpy as np
 from datasets import load_dataset
 
 
-class PretrainDataset(object):
-    """ Pretraining datset builder class. """
+class DatasetFactory(object):
+    """ Datset builder class. """
 
     @staticmethod
     def get_default_config(updates=None):
@@ -41,7 +41,7 @@ class PretrainDataset(object):
             raise ValueError(f'Unknown dataset type: {config.type}')
 
     def __init__(self):
-        raise ValueError('PretrainDataset is a static class and should not be instantiated.')
+        raise ValueError('DatasetFactory is a static class and should not be instantiated.')
 
 
 class TextProcessor(object):

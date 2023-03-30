@@ -17,7 +17,7 @@ from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
 import optax
 
-from EasyLM.data import PretrainDataset
+from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
@@ -46,8 +46,8 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     save_optimizer_state=False,
     eval_steps=0,
     tokenizer=RobertaConfig.get_tokenizer_config(),
-    train_dataset=PretrainDataset.get_default_config(),
-    eval_dataset=PretrainDataset.get_default_config(),
+    train_dataset=DatasetFactory.get_default_config(),
+    eval_dataset=DatasetFactory.get_default_config(),
     optimizer=OptimizerFactory.get_default_config(),
     roberta=RobertaConfig.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
@@ -72,10 +72,10 @@ def main(argv):
         dataset = mlxu.load_pickle(FLAGS.load_dataset_state)
     else:
         tokenizer = RobertaConfig.get_tokenizer(FLAGS.tokenizer)
-        dataset = PretrainDataset.load_dataset(FLAGS.train_dataset, tokenizer)
+        dataset = DatasetFactory.load_dataset(FLAGS.train_dataset, tokenizer)
 
     if FLAGS.eval_steps > 0:
-        eval_dataset = PretrainDataset.load_dataset(
+        eval_dataset = DatasetFactory.load_dataset(
             FLAGS.eval_dataset, dataset.tokenizer
         )
         eval_iterator = iter(eval_dataset)

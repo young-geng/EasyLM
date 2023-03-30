@@ -1,8 +1,9 @@
 # Dataset for EasyLM
-
 EasyLM has built in support for the following types of datasets:
 * Huggingface dataset
 * JSON dataset
+
+These dataset modules are implemented in the [data.py](/EasyLM/data.py) file.
 
 Typically, datasets are configured by passing in command line arguments to the
 training script. For example, to use the Huggingface dataset for training GPT-J,
@@ -19,6 +20,13 @@ In this example, we select the Huggingface dataset by specifying the `type` of
 `train_dataset` to be `huggingface`. We then specify the path to the dataset,
 which is `c4` in this case. The examples loaded from the dataset will be processed
 by a TextProcessor, which is configured by the `text_processor` field.
+
+The following options are supported for the dataset module:
+* `type`: The type of the dataset. Supported values are `huggingface` and `json`.
+* `text_processor`: The configuration of the TextProcessor used to process the
+  loaded examples.
+* `huggingface_dataset`: The configuration of the Huggingface dataset.
+* `json_dataset`: The configuration of the JSON dataset.
 
 
 ## Huggingface Dataset
