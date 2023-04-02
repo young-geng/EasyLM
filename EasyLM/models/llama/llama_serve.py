@@ -64,10 +64,8 @@ def main(argv):
 
     with jax.default_device(jax.devices("cpu")[0]):
         llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
-        load_type, load_path = FLAGS.load_checkpoint.split('::', 1)
-        assert load_type != 'trainstate'
         _, params = StreamingCheckpointer.load_trainstate_checkpoint(
-            FLAGS.load_checkpoint
+            FLAGS.load_checkpoint, disallow_trainstate=True
         )
 
         hf_model = FlaxLLaMAForCausalLM(

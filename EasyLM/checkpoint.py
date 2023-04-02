@@ -29,6 +29,10 @@ class StreamingCheckpointer(object):
             path = os.path.join(self.checkpoint_dir, filename)
         else:
             path = '/dev/null'
+        self.save_train_state_to_file(train_state, path, gather_fns)
+
+    @staticmethod
+    def save_train_state_to_file(train_state, path, gather_fns=None):
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
@@ -131,7 +135,9 @@ class StreamingCheckpointer(object):
         return from_state_dict(target, state_dict)
 
     @classmethod
-    def load_trainstate_checkpoint(cls, load_from, trainstate_target=None, trainstate_shard_fns=None):
+    def load_trainstate_checkpoint(cls, load_from, trainstate_target=None,
+                                   trainstate_shard_fns=None,
+                                   disallow_trainstate=False):
         if trainstate_target is not None:
             params_target = trainstate_target.params['params']
         else:
@@ -143,6 +149,8 @@ class StreamingCheckpointer(object):
             params_shard_fns = None
 
         load_type, load_path = load_from.split('::', 1)
+        if disallow_trainstate:
+            assert load_type != 'trainstate', 'Loading full trainstate is not allowed!'
         train_state = None
         restored_params = None
         if load_type == 'trainstate':

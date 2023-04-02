@@ -70,9 +70,8 @@ def main(argv):
         if load_type == 'huggingface':
             params = gptj_config.load_pretrained(load_path)
         else:
-            assert load_type != 'trainstate'
             _, params = StreamingCheckpointer.load_trainstate_checkpoint(
-                FLAGS.load_checkpoint
+                FLAGS.load_checkpoint, disallow_trainstate=True
             )
 
         hf_model = FlaxGPTJForCausalLM(

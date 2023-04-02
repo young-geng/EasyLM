@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This script converts LLaMA model checkpoint trained by EsayLM to the
+# HuggingFace transformers LLaMA PyTorch format, which can then be loaded
+# by HuggingFace transformers.
+
 import gc
 import json
 import math

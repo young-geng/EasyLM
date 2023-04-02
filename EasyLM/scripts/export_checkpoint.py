@@ -14,14 +14,16 @@ from EasyLM.checkpoint import StreamingCheckpointer
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
-    input=('', 'input checkpoint trainstate file'),
+    input=('', 'input checkpoint file'),
     output=('', 'output Flax msgpack file'),
 )
 
 
 def main(argv):
     assert FLAGS.input != '' and FLAGS.output != '', 'input and output must be specified'
-    params = StreamingCheckpointer.load_checkpoint(FLAGS.input)['params']['params']
+    params = StreamingCheckpointer.load_trainstate_checkpoint(
+        FLAGS.input, disallow_trainstate=True
+    )[1]['params']
     with mlxu.open_file(FLAGS.output, 'wb') as fout:
         fout.write(flax.serialization.msgpack_serialize(params, in_place=True))
 
