@@ -106,7 +106,7 @@ from a based checkpoint and a diff checkpoint, use the following command:
 ``` shell
 python -m EasyLM.scripts.diff_checkpoint \
     --recover_diff=True \
-    --load_base_checkpoint='params::path/to/based/checkpoint' \
+    --load_base_checkpoint='params::path/to/base/checkpoint' \
     --load_target_checkpoint='params::path/to/diff/checkpoint' \
     --output_file='path/to/output/checkpoint' \
     --streaming=True

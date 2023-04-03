@@ -99,3 +99,7 @@ Currently, the following models are supported:
 * GPT-J
 * OPT
 * RoBERTa
+
+
+## Additional Examples and Tutorials
+* [Running Koala locally](koala.md)

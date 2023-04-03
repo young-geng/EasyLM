@@ -24,6 +24,11 @@ Currently, the following models are supported:
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
 
+## Koala
+Koala is our new chatbot fine-tuned on top of LLaMA. If you are interested in our Koala chatbot, you can check out the [blogpost](https://bair.berkeley.edu/blog/2023/04/03/koala/)
+and [documentation for running it locally](docs/koala.md).
+
+
 ## Installation
 The installation method differs between GPU hosts and Cloud TPU hosts. The first
 step is to pull from GitHub.
