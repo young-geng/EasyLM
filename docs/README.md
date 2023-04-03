@@ -81,15 +81,16 @@ For more information about the configuration of each module, please refer to the
 `get_default_config()` method of the module.
 
 
-### Configurable Modules
+## Documentations for Configurable Modules
 The following common modules are configurable in EasyLM:
 * [Dataset](dataset.md)
 * [Optimizer](optimizer.md)
+* [Checkpointing](checkpointing.md)
 * LM server and client
 
 
 
-## Supported Language Models
+## Documentations for Language Models Supported by EasyLM
 Currently, the following models are supported:
 * LLaMA
 * GPT-J

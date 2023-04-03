@@ -273,13 +273,21 @@ def get_float_dtype_by_name(dtype):
     }[dtype]
 
 
-def float_to_dtype(tree, dtype):
+def float_tensor_to_dtype(tensor, dtype):
+    if dtype is None or dtype == '':
+        return tensor
+    if isinstance(dtype, str):
+        dtype = get_float_dtype_by_name(dtype)
     float_dtypes = (jnp.bfloat16, jnp.float16, jnp.float32, jnp.float64)
-    def to_dtype(x):
-        if getattr(x, 'dtype', None) in float_dtypes:
-            x = x.astype(dtype)
-        return x
-    return jax.tree_util.tree_map(to_dtype, tree)
+    if getattr(tensor, 'dtype', None) in float_dtypes:
+        tensor = tensor.astype(dtype)
+    return tensor
+
+
+def float_to_dtype(tree, dtype):
+    return jax.tree_util.tree_map(
+        partial(float_tensor_to_dtype, dtype=dtype), tree
+    )
 
 
 def flatten_tree(xs, is_leaf=None, sep=None):
