@@ -86,13 +86,15 @@ The following common modules are configurable in EasyLM:
 * [Dataset](dataset.md)
 * [Optimizer](optimizer.md)
 * [Checkpointing](checkpointing.md)
-* LM server and client
+* [Serving](serving.md)
+* [Parallelism](parallelism.md)
+* [Logger](logger.md)
 
 
 
 ## Documentations for Language Models Supported by EasyLM
 Currently, the following models are supported:
-* LLaMA
+* [LLaMA](llama.md)
 * GPT-J
 * OPT
 * RoBERTa

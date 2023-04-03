@@ -40,7 +40,6 @@ class LMServer(object):
     @staticmethod
     def get_default_config(updates=None):
         config = ConfigDict()
-        config.name = 'lm_server'
         config.host = '0.0.0.0'
         config.port = 5007
         config.batch_size = 1

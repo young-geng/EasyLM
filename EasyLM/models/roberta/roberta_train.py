@@ -43,7 +43,6 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     log_freq=50,
     save_model_freq=0,
     save_milestone_freq=0,
-    save_optimizer_state=False,
     eval_steps=0,
     tokenizer=RobertaConfig.get_tokenizer_config(),
     train_dataset=DatasetFactory.get_default_config(),

@@ -34,7 +34,7 @@ from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim='1,-1',
+    mp_mesh_dim='-1,1',
     dtype='bf16',
     input_length=1024,
     seq_length=2048,

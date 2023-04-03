@@ -37,34 +37,34 @@ from EasyLM.checkpoint import StreamingCheckpointer
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_checkpoint='',
     tokenizer_path='',
-    model_size='13B',
+    model_size='13b',
     output_dir='',
 )
 
 
 LLAMA_STANDARD_CONFIGS = {
-    '7B': {
+    '7b': {
         'dim': 4096,
         'intermediate_size': 11008,
         'n_layers': 32,
         'n_heads': 32,
         'norm_eps': 1e-6,
     },
-    '13B': {
+    '13b': {
         'dim': 5120,
         'intermediate_size': 13824,
         'n_layers': 40,
         'n_heads': 40,
         'norm_eps': 1e-6,
     },
-    '30B': {
+    '30b': {
         'dim': 6656,
         'intermediate_size': 17920,
         'n_layers': 60,
         'n_heads': 52,
         'norm_eps': 1e-6,
     },
-    '65B': {
+    '65b': {
         'dim': 8192,
         'intermediate_size': 22016,
         'n_layers': 80,

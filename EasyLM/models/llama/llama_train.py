@@ -34,7 +34,7 @@ from EasyLM.models.llama.llama_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim='1,-1',
+    mp_mesh_dim='-1,1',
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -43,7 +43,6 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     log_freq=50,
     save_model_freq=0,
     save_milestone_freq=0,
-    save_optimizer_state=False,
     eval_steps=0,
     tokenizer=LLaMAConfig.get_tokenizer_config(),
     train_dataset=DatasetFactory.get_default_config(),
