@@ -19,14 +19,9 @@ training on Google Cloud TPU Pods.
 
 Currently, the following models are supported:
 * [LLaMA](https://arxiv.org/abs/2302.13971)
-* [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B), with support for
-[Forgetful Causal Masking (FCM)](https://arxiv.org/abs/2210.13432)
+* [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B)
 * [OPT](https://arxiv.org/abs/2205.01068)
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
-
-
-## [Documentations](docs/README.md)
-More comprehensive documentations can be found in the [docs](docs/) directory.
 
 
 ## Installation
@@ -56,74 +51,10 @@ script to set up the TPU host.
 ```
 
 
-## Training the Models
-Model training can be launched via the python scripts in the main directory. For
-example, to laucnh GPT-J training, the following command can be used:
-``` shell
-python -m EasyLM.models.gptj.gptj_train
-```
-For Cloud TPU Pods, the same training command needs to be invoked on each host
-in the pod.
+## [Documentations](docs/README.md)
+The EasyLM documentations can be found in the [docs](docs/) directory.
 
-## Serving Pre-trained Models
-Pretrained langauge models can be served as an HTTP server. Use the
-following command to launch the HTTP server for GPT-J with pretrained weights
-from Huggingface transformers:
 
-```shell
-python -m EasyLM.models.gptj.gptj_serve \
-    --mp_mesh_dim=-1 \
-    --load_gptj_config='huggingface::EleutherAI/gpt-j-6B' \
-    --load_checkpoint='huggingface::EleutherAI/gpt-j-6B' \
-    --dtype='bf16' \
-    --input_length=1024 \
-    --seq_length=2048 \
-    --lm_server.host='127.0.0.1' \
-    --lm_server.pre_compile='loglikelihood'
-```
-
-Once the server is launched, you can navigate to the following URL to chat with
-the language model: [http://localhost:5007/](http://localhost:5007/)
-
-## Evaluating the Served Language Model with LM Evaluation Harness
-EasyLM has builtin support for [lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness),
-which can evaluate the language model on a variety of tasks. Use the following
-command to evaluate the the langauge model served with the HTTP server:
-```shell
-python -m EasyLM.scripts.lm_eval_harness \
-    --lm_server_url='http://localhost:5007/' \
-    --tasks='wsc,piqa,winogrande,openbookqa,logiqa' \
-    --shots=0
-```
-
-You can change the number of shots and the list of tasks.
-
-## Evaulating the Served Language Model on MMLU
-The served langauge model can also be evaluated with the [MMLU](https://github.com/hendrycks/test)
-benchmark. To evaluate the language model on MMLU, we need to serve the model
-with a long input length and batch size 4.
-```shell
-python -m EasyLM.models.gptj.gptj_serve \
-    --mp_mesh_dim=-1 \
-    --load_gptj_config='huggingface::EleutherAI/gpt-j-6B' \
-    --load_checkpoint='huggingface::EleutherAI/gpt-j-6B' \
-    --dtype='bf16' \
-    --input_length=2040 \
-    --seq_length=2048 \
-    --lm_server.host='127.0.0.1' \
-    --lm_server.pre_compile='loglikelihood' \
-    --lm_server.batch_size=4
-```
-
-In order to run the evaluation, you'll need to use [my fork of MMLU](https://github.com/young-geng/mmlu_easylm).
-```shell
-git clone https://github.com/young-geng/mmlu_easylm.git
-cd mmlu_easylm
-python evaluate_easylm.py \
-    --name='gptj' \
-    --lm_server_url='http://localhost:5007' \
-    --ntrain=5
-```
 
 ## Credits
 * The LLaMA implementation is from [JAX_llama](https://github.com/Sea-Snell/JAX_llama)

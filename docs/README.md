@@ -81,14 +81,15 @@ For more information about the configuration of each module, please refer to the
 `get_default_config()` method of the module.
 
 
-## Documentations for Configurable Modules
-The following common modules are configurable in EasyLM:
-* [Dataset](dataset.md)
-* [Optimizer](optimizer.md)
-* [Checkpointing](checkpointing.md)
-* [Serving](serving.md)
-* [Parallelism](parallelism.md)
-* [Logger](logger.md)
+## Documentations for EasyLM Modules and Scripts
+Here are the documentations for the common modules and scripts in EasyLM:
+* [Parallelism](parallelism.md): model and data parallelism in EasyLM
+* [Dataset](dataset.md): data loading and processing
+* [Optimizer](optimizer.md): optimizer and gradient accumulation
+* [Checkpointing](checkpointing.md): checkpointing
+* [Serving](serving.md): serving the language model with an HTTP server
+* [Logger](logger.md): logging metrics for training
+* [Evaluation](evaluation.md): evaluation of language models on benchmarks
 
 
 

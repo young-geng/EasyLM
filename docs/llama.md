@@ -111,6 +111,12 @@ The following command line options are supported for the serving script:
   for more details.
 
 
+## LLaMA Tokenizer
+LLaMA uses a custom tokenizer that need to be loaded during training and serving.
+Specifically, you need to set the `tokenizer.vocab_file` command line option to
+to be the path of the `tokenizer.model` file that in the official LLaMA checkpoint.
+
+
 ## Converting the EasyLM LLaMA Checkpoint to Huggingface LLaMA Checkpoint
 To facilitate the interoperability with Huggingface transformers, EasyLM also
 provides a script to convert the EasyLM LLaMA checkpoint to the Huggingface
