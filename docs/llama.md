@@ -40,7 +40,7 @@ The following command line options are supported for the training script:
 * `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
 * `mp_mesh_dims`: The mesh dimensions for the model parallelism. LLaMA uses
   2D mesh so a comma separated list of 2 values are required. See
-  [the parallelism documentation](parallelism.md.md) for more details.
+  [the parallelism documentation](parallelism.md) for more details.
 * `total_steps`: The total number of training steps.
 * `load_llama_config`: the LLaMA configuration to use. Can be `7b`, `13b`, or
   `30b` or `65b`.
@@ -92,7 +92,7 @@ The following command line options are supported for the serving script:
 * `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
 * `mp_mesh_dims`: The mesh dimensions for the model parallelism. LLaMA uses
   2D mesh so a comma separated list of 2 values are required. See
-  [the parallelism documentation](parallelism.md.md) for more details.
+  [the parallelism documentation](parallelism.md) for more details.
 * `dtype`: the float dtype to use for the model. Can be `bf16` or `fp16` or `fp32`.
 * `input_length`: the maximum length of the input sequence.
 * `seq_length`: the maximum length of the total sequence (input and output).

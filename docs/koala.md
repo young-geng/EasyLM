@@ -69,3 +69,15 @@ python -m EasyLM.models.llama.llama_serve \
 Then navigate to `http://localhost:5009` to interact with the chatbot.
 
 
+## Converting the Koala Weights to HuggingFace Transformers
+You can also convert the Koala model weights to HuggingFace Transformers format,
+so it can be used with the LLaMA implementation in transformers. To do so, use
+the following command:
+
+``` shell
+python -m EasyLM.models.llama.convert_easylm_to_hf \
+    --load_checkpoint='params::path/to/koala/checkpoint' \
+    --tokenizer_path='path/to/llama/tokenizer' \
+    --model_size='13b' \  # '7b', '13b', '30b' or '65b'
+    --output_dir='path/to/output/huggingface/koala/checkpoint'
+```
