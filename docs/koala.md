@@ -81,3 +81,35 @@ python -m EasyLM.models.llama.convert_easylm_to_hf \
     --model_size='13b' \  # '7b', '13b', '30b' or '65b'
     --output_dir='path/to/output/huggingface/koala/checkpoint'
 ```
+
+
+## Koala Chatbot Prompts
+As can been seen in the serving command above, the Koala chatbot requires a
+series of prompts to be prepended and appended to the user input in order to
+generate response correctly. Hence, to use the Koala weights in other frameworks,
+you will need to process the prompts accordingly.
+
+The beginning of prompt `BEGINNING OF CONVERSATION: ` is always prepended to
+every conversation. For each user input, the user prompt `USER: ` is prepended
+to the user input, a space ` ` is appended to the user input and then the
+language model prompt `GPT:` is appended to the user input. This whole string
+will be used as prompt input to the language model for generating the response.
+For example, in the first round of conversation, when the user inputs `Hello!`,
+the whole prompt for generating the first response is:
+
+```
+BEGINNING OF CONVERSATION: USER: Hello! GPT:
+```
+
+After the language model generates the response, we append the response to the
+prompt and then append the EOS token `</s>` to the prompt. Suppose the language
+model generates the following response: `Hi! How can I help you?`, and for the
+next round, the user input is `What is the largest animal on earth?`. Then
+the whole prompt for generating the second response is:
+
+```
+BEGINNING OF CONVERSATION: USER: Hello! GPT:Hi! How can I help you?</s>USER: What is the largest animal on earth? GPT:
+```
+
+Note that due to the prompt and generated parts are tokenized separately, there's
+no space between the model prompt `GPT:` and the generated response.
