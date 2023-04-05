@@ -32,6 +32,7 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from EasyLM.checkpoint import StreamingCheckpointer
+from EasyLM.jax_utils import float_tensor_to_dtype
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
@@ -39,6 +40,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     tokenizer_path='',
     model_size='13b',
     output_dir='',
+    dtype='fp16',
 )
 
 
@@ -91,6 +93,7 @@ def load_and_convert_checkpoint(path):
     for key, tensor in flax_params.items():
         if match_keywords(key, ["kernel"], ["norm", 'ln_f']):
             tensor = tensor.T
+        tensor = float_tensor_to_dtype(tensor, FLAGS.dtype)
         torch_params[key] = torch.from_numpy(tensor)
     return torch_params
 
