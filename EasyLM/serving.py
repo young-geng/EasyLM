@@ -311,6 +311,7 @@ class LMServer(object):
             )
             with gr.Row():
                 send = gr.Button('Send')
+                regenerate = gr.Button('Regenerate', interactive=False)
                 clear = gr.Button('Reset')
 
             temp_slider = gr.Slider(
@@ -318,61 +319,84 @@ class LMServer(object):
                 value=self.config.default_temperature
             )
 
-            context_state = gr.State('')
+            context_state = gr.State(['', ''])
 
-            def user_fn(user_message, history):
+            def user_fn(user_message, history, context):
                 return {
                     msg: gr.update(value='', interactive=False),
                     clear: gr.update(interactive=False),
                     send: gr.update(interactive=False),
+                    regenerate: gr.update(interactive=False),
                     chatbot: history + [[user_message, None]],
+                    context_state: [context[1], context[1]],
                 }
 
             def model_fn(history, context, temperature):
-                history[-1][1], context = self.process_chat(
-                    history[-1][0], context, temperature
+                history[-1][1], new_context = self.process_chat(
+                    history[-1][0], context[0], temperature
                 )
                 return {
                     msg: gr.update(value='', interactive=True),
                     clear: gr.update(interactive=True),
                     send: gr.update(interactive=True),
                     chatbot: history,
-                    context_state: context,
+                    context_state: [context[0], new_context],
+                    regenerate: gr.update(interactive=True),
+                }
+
+            def regenerate_fn():
+                return {
+                    msg: gr.update(value='', interactive=False),
+                    clear: gr.update(interactive=False),
+                    send: gr.update(interactive=False),
+                    regenerate: gr.update(interactive=False),
                 }
 
             def clear_fn():
                 return {
                     chatbot: None,
                     msg: '',
-                    context_state: '',
+                    context_state: ['', ''],
+                    regenerate: gr.update(interactive=False),
                 }
 
             msg.submit(
                 user_fn,
-                inputs=[msg, chatbot],
-                outputs=[msg, clear, send, chatbot],
+                inputs=[msg, chatbot, context_state],
+                outputs=[msg, clear, send, chatbot, context_state, regenerate],
                 queue=False
             ).then(
                 model_fn,
                 inputs=[chatbot, context_state, temp_slider],
-                outputs=[msg, clear, send, chatbot, context_state],
+                outputs=[msg, clear, send, chatbot, context_state, regenerate],
                 queue=True
             )
             send.click(
                 user_fn,
-                inputs=[msg, chatbot],
-                outputs=[msg, clear, send, chatbot],
+                inputs=[msg, chatbot, context_state],
+                outputs=[msg, clear, send, chatbot, context_state, regenerate],
                 queue=False
             ).then(
                 model_fn,
                 inputs=[chatbot, context_state, temp_slider],
-                outputs=[msg, clear, send, chatbot, context_state],
+                outputs=[msg, clear, send, chatbot, context_state, regenerate],
+                queue=True
+            )
+            regenerate.click(
+                regenerate_fn,
+                inputs=None,
+                outputs=[msg, clear, send, regenerate],
+                queue=False
+            ).then(
+                model_fn,
+                inputs=[chatbot, context_state, temp_slider],
+                outputs=[msg, clear, send, chatbot, context_state, regenerate],
                 queue=True
             )
             clear.click(
                 clear_fn,
                 inputs=None,
-                outputs=[chatbot, msg, context_state],
+                outputs=[chatbot, msg, context_state, regenerate],
                 queue=False
             )
 
