@@ -8,8 +8,10 @@ Koala model weights, and running the Koala chatbot locally.
 ## Obtaining the Wegith Diff of Koala
 Due to the licence of the LLaMA model, we cannot directly release the fine-tuned
 Koala model weights. Instead, we release the diff of weights, which can be used
-to recover the Koala model weights with the origina LLaMA model weights. [The diff
-weights can be downloaded here.](https://drive.google.com/drive/folders/10f7wrlAFoPIy-TECHsx9DKIvbQYunCfl?usp=sharing).
+to recover the Koala model weights with the origina LLaMA model weights. The diff
+weights can be downloaded from the following sources:
+* [HuggingFace Hub](https://huggingface.co/young-geng/koala/tree/main).
+* [Google Drive](https://drive.google.com/drive/folders/10f7wrlAFoPIy-TECHsx9DKIvbQYunCfl?usp=sharing).
 
 
 ## Recovering the Koala Model Weights
