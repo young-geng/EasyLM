@@ -243,7 +243,7 @@ class RobertaConfig(PretrainedConfig):
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
-            return cls.from_dict(load_pickle(load_path)['gptj_config'])
+            return cls.from_dict(load_pickle(load_path)['roberta_config'])
         elif load_type == 'huggingface':
             return cls.from_pretrained(load_path)
         else:
