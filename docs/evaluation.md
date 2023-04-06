@@ -6,7 +6,7 @@ against various benchmarks in few-shot and zero-shot settings.
 ## LM Evaluation Harness
 EasyLM comes with builtin support for [lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness),
 which can evaluate the language model on a variety of tasks. For example,
-you can use the following command to evaluate the the langauge model served with
+you can use the following command to evaluate the langauge model served with
 the HTTP server:
 
 ```shell
