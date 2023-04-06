@@ -317,7 +317,7 @@ class OPTConfig(PretrainedConfig):
     def load_config(cls, path):
         load_type, load_path = path.split('::', 1)
         if load_type == 'pickle':
-            return cls.from_dict(load_pickle(load_path)['gptj_config'])
+            return cls.from_dict(load_pickle(load_path)['opt_config'])
         elif load_type == 'json':
             with open_file(load_path, 'r') as fin:
                 raw_config = fin.read()
