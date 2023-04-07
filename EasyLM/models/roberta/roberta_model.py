@@ -28,7 +28,7 @@ from flax.linen import partitioning as nn_partitioning
 from flax.linen.attention import dot_product_attention_weights
 from flax.traverse_util import flatten_dict, unflatten_dict
 from jax import lax
-from jax.experimental import PartitionSpec
+from jax.sharding import PartitionSpec
 
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_flax_outputs import (

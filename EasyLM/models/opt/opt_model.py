@@ -36,7 +36,7 @@ from transformers.modeling_flax_utils import ACT2FN, FlaxPreTrainedModel, append
 from transformers.utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from transformers.generation.flax_logits_process import FlaxLogitsProcessorList
 from transformers import AutoTokenizer
-from jax.experimental import PartitionSpec
+from jax.sharding import PartitionSpec
 
 from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict

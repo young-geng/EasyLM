@@ -12,8 +12,8 @@ import mlxu
 
 import jax
 import jax.numpy as jnp
-from jax.experimental.pjit import pjit, with_sharding_constraint
-from jax.experimental import PartitionSpec as PS
+from jax.experimental.pjit import pjit
+from jax.sharding import PartitionSpec as PS
 import flax
 from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
@@ -26,7 +26,7 @@ from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
     JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules, tree_apply,
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
-    FlaxTemperatureLogitsWarper
+    with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
 from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
 
@@ -74,7 +74,6 @@ def main(argv):
             seed=FLAGS.seed,
             _do_init=False
         )
-        params = jax.device_put(params, device=jax.devices("cpu")[0])
 
     model_ps = match_partition_rules(
         LLaMAConfig.get_partition_rules(), params
@@ -85,8 +84,8 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS()),
-        out_axis_resources=(PS(), PS(), PS())
+        in_shardings=(model_ps, PS(), PS()),
+        out_shardings=(PS(), PS(), PS())
     )
     def forward_loglikelihood(params, rng, batch):
         batch = with_sharding_constraint(batch, PS('dp'))
@@ -117,8 +116,8 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS(), PS()),
-        out_axis_resources=(PS(), PS())
+        in_shardings=(model_ps, PS(), PS(), PS()),
+        out_shardings=(PS(), PS())
     )
     def forward_generate(params, rng, batch, temperature):
         batch = with_sharding_constraint(batch, PS('dp'))
@@ -146,8 +145,8 @@ def main(argv):
 
     @partial(
         pjit,
-        in_axis_resources=(model_ps, PS(), PS()),
-        out_axis_resources=(PS(), PS())
+        in_shardings=(model_ps, PS(), PS()),
+        out_shardings=(PS(), PS())
     )
     def forward_greedy_generate(params, rng, batch):
         batch = with_sharding_constraint(batch, PS('dp'))

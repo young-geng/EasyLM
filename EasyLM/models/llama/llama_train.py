@@ -10,7 +10,7 @@ import mlxu
 import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit, with_sharding_constraint
-from jax.experimental import PartitionSpec as PS
+from jax.sharding import PartitionSpec as PS
 import flax
 from flax import linen as nn
 from flax.jax_utils import prefetch_to_device
@@ -176,28 +176,28 @@ def main(argv):
 
     sharded_init_fn = pjit(
         init_fn,
-        in_axis_resources=PS(),
-        out_axis_resources=train_state_partition
+        in_shardings=PS(),
+        out_shardings=train_state_partition
     )
 
     sharded_create_trainstate_from_params = pjit(
         create_trainstate_from_params,
-        in_axis_resources=(train_state_partition.params, ),
-        out_axis_resources=train_state_partition,
+        in_shardings=(train_state_partition.params, ),
+        out_shardings=train_state_partition,
         donate_argnums=(0, ),
     )
 
     sharded_train_step = pjit(
         train_step,
-        in_axis_resources=(train_state_partition, PS(), PS()),
-        out_axis_resources=(train_state_partition, PS(), PS()),
+        in_shardings=(train_state_partition, PS(), PS()),
+        out_shardings=(train_state_partition, PS(), PS()),
         donate_argnums=(0, 1),
     )
 
     sharded_eval_step = pjit(
         eval_step,
-        in_axis_resources=(train_state_partition, PS(), PS()),
-        out_axis_resources=(PS(), PS()),
+        in_shardings=(train_state_partition, PS(), PS()),
+        out_shardings=(PS(), PS()),
         donate_argnums=(1,),
     )
 
@@ -260,6 +260,7 @@ def main(argv):
 
                 log_metrics = {"step": step}
                 log_metrics.update(metrics)
+                log_metrics = jax.device_get(log_metrics)
                 logger.log(log_metrics)
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 

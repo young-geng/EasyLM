@@ -8,7 +8,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jax.experimental import PartitionSpec as PS
+from jax.sharding import PartitionSpec as PS
 import flax.linen as nn
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 from flax.linen import combine_masks, make_causal_mask

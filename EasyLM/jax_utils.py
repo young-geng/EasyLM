@@ -10,9 +10,9 @@ import dill
 import flax
 import jax
 import jax.numpy as jnp
-from jax.experimental import PartitionSpec as PS
+from jax.sharding import PartitionSpec as PS
+from jax.sharding import Mesh
 from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
-from jax.experimental.maps import Mesh
 from jax.experimental.pjit import pjit
 from jax.interpreters import pxla
 import numpy as np
@@ -78,8 +78,8 @@ def make_shard_and_gather_fns(partition_specs, dtype_specs=None):
     def make_shard_fn(partition_spec, dtype_spec=None):
         jax_shard_function = pjit(
             make_to_dtype_fn(dtype_spec),
-            in_axis_resources=None,
-            out_axis_resources=partition_spec
+            in_shardings=None,
+            out_shardings=partition_spec
         )
         def shard_fn(tensor):
             return jax_shard_function(tensor).block_until_ready()
@@ -88,8 +88,8 @@ def make_shard_and_gather_fns(partition_specs, dtype_specs=None):
     def make_gather_fn(partition_spec, dtype_spec=None):
         jax_gather_fn = pjit(
             make_to_dtype_fn(dtype_spec),
-            in_axis_resources=partition_spec,
-            out_axis_resources=None
+            in_shardings=partition_spec,
+            out_shardings=None
         )
         def gather_fn(tensor):
             return jax.device_get(jax_gather_fn(tensor))
