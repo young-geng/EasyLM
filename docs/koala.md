@@ -20,9 +20,9 @@ LLaMA model weights and convert it to EasyLM checkpoint format. To convert the w
 use the following command:
 
 ``` shell
-python -m EasyLM.models.llama.convert_torch_to_easylm.py \
-    --checkpoint_dir='path/to/torch/llama/checkpoint' \
-    --output_dir='path/to/output/easylm/checkpoint' \
+python -m EasyLM.models.llama.convert_torch_to_easylm \
+    --checkpoint_dir='path/to/torch/llama/checkpoint/directory' \
+    --output_file='path/to/output/easylm/checkpoint/file' \
     --streaming=True
 ```
 
@@ -37,9 +37,9 @@ model weights with the following command:
 ``` shell
 python -m EasyLM.scripts.diff_checkpoint \
     --recover_diff=True \
-    --load_base_checkpoint='params::path/to/llama/checkpoint' \
-    --load_target_checkpoint='params::path/to/koala/diff/checkpoint' \
-    --output_file='path/to/output/checkpoint' \
+    --load_base_checkpoint='params::path/to/llama/checkpoint/file' \
+    --load_target_checkpoint='params::path/to/koala/diff/checkpoint/file' \
+    --output_file='path/to/output/checkpoint/file' \
     --streaming=True
 ```
 
