@@ -168,7 +168,7 @@ def main(argv):
         train_state_partition, train_state_shapes
     )
     checkpointer = StreamingCheckpointer(
-        FLAGS.checkpointer, logger.checkpoint_dir,
+        FLAGS.checkpointer, logger.output_dir,
         enable=jax.process_index() == 0,
     )
 

@@ -80,6 +80,18 @@ LLAMA_STANDARD_CONFIGS = {
         'use_cache': True,
         'tie_word_embeddings': False,
     },
+    'debug': { # A small model for debugging
+        'vocab_size': 32000,
+        'hidden_size': 128,
+        'intermediate_size': 256,
+        'num_hidden_layers': 2,
+        'num_attention_heads': 4,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-6,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
 }
 
 
@@ -436,9 +448,6 @@ class FlaxLLaMAAttention(nn.Module):
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis, dtype=self.dtype)
 
-        xq = with_sharding_constraint(xq, PS("dp", None, "mp1", "mp2"))
-        xk = with_sharding_constraint(xk, PS("dp", None, "mp1", "mp2"))
-
         query_length, key_length = xq.shape[1], xk.shape[1]
 
         if self.has_variable("cache", "cached_key"):
@@ -486,15 +495,10 @@ class FlaxLLaMAAttention(nn.Module):
         attn_weights = with_sharding_constraint(attn_weights, PS("dp", "mp1", None, None))
 
         attn_output = jnp.einsum("...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision)
-        attn_output = with_sharding_constraint(attn_output, PS("dp", None, "mp1", "mp2"))
         attn_output = self._merge_heads(attn_output)
-        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.wo(attn_output)
-        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
-        attn_output = with_sharding_constraint(attn_output, PS("dp", None, ("mp1", "mp2")))
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
-        outputs = with_sharding_constraint(outputs, PS("dp", None, ("mp1", "mp2")))
         return outputs
 
 

@@ -40,7 +40,7 @@ dependencies:
         - requests
         - jupyter_http_over_ws
         - lm-eval==0.3.0
-        - mlxu==0.1.9
+        - mlxu==0.1.10
         - pydantic
         - fastapi
         - uvicorn
