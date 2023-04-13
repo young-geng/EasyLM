@@ -195,30 +195,50 @@ class LLaMAConfig(PretrainedConfig):
         return config
 
     @staticmethod
-    def get_partition_rules():
+    def get_partition_rules(fsdp=False):
         """ Parition rules for GPTJ. Note that these rules are orderd, so that
             the beginning rules match first. It is important to use
             PartitionSpec() instead of None here because JAX does not treat
             None as a pytree leaf.
         """
-        return [
-            # embeddings
-            ("transformer/wte/embedding", PS(("mp1", "mp2"), None)),
-            # atention
-            ("attention/(wq|wk|wv)/kernel", PS(None, ("mp1", "mp2"))),
-            ("attention/wo/kernel", PS(("mp1", "mp2"), None)),
-            # mlp
-            ("feed_forward/w1/kernel", PS(None, ("mp1", "mp2"))),
-            ("feed_forward/w2/kernel", PS(("mp1", "mp2"), None)),
-            ("feed_forward/w3/kernel", PS(None, ("mp1", "mp2"))),
-            # layer norms
-            ("attention_norm/kernel", PS(None)),
-            ("ffn_norm/kernel", PS(None)),
-            # output head
-            ("transformer/ln_f/kernel", PS(None)),
-            ("lm_head/kernel", PS(None, ("mp1", "mp2"))),
-            ('.*', PS(None)),
-        ]
+        if fsdp:
+            return [
+                # embeddings
+                ("transformer/wte/embedding", PS(("mp1", "mp2"), "dp")),
+                # atention
+                ("attention/(wq|wk|wv)/kernel", PS("dp", ("mp1", "mp2"))),
+                ("attention/wo/kernel", PS(("mp1", "mp2"), "dp")),
+                # mlp
+                ("feed_forward/w1/kernel", PS("dp", ("mp1", "mp2"))),
+                ("feed_forward/w2/kernel", PS(("mp1", "mp2"), "dp")),
+                ("feed_forward/w3/kernel", PS("dp", ("mp1", "mp2"))),
+                # layer norms
+                ("attention_norm/kernel", PS(None)),
+                ("ffn_norm/kernel", PS(None)),
+                # output head
+                ("transformer/ln_f/kernel", PS(None)),
+                ("lm_head/kernel", PS("dp", ("mp1", "mp2"))),
+                ('.*', PS(None)),
+            ]
+        else:
+            return [
+                # embeddings
+                ("transformer/wte/embedding", PS(("mp1", "mp2"), None)),
+                # atention
+                ("attention/(wq|wk|wv)/kernel", PS(None, ("mp1", "mp2"))),
+                ("attention/wo/kernel", PS(("mp1", "mp2"), None)),
+                # mlp
+                ("feed_forward/w1/kernel", PS(None, ("mp1", "mp2"))),
+                ("feed_forward/w2/kernel", PS(("mp1", "mp2"), None)),
+                ("feed_forward/w3/kernel", PS(None, ("mp1", "mp2"))),
+                # layer norms
+                ("attention_norm/kernel", PS(None)),
+                ("ffn_norm/kernel", PS(None)),
+                # output head
+                ("transformer/ln_f/kernel", PS(None)),
+                ("lm_head/kernel", PS(None, ("mp1", "mp2"))),
+                ('.*', PS(None)),
+            ]
 
     @staticmethod
     def get_weight_decay_exclusions():

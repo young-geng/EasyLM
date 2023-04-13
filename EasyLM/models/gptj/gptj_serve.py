@@ -36,7 +36,8 @@ from EasyLM.models.gptj.gptj_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=1,
+    mp_mesh_dim=-1,
+    fsdp=False,
     dtype='bf16',
     input_length=1024,
     seq_length=2048,
@@ -82,7 +83,7 @@ def main(argv):
         )
 
     model_ps = match_partition_rules(
-        GPTJConfig.get_partition_rules(), params
+        GPTJConfig.get_partition_rules(FLAGS.fsdp), params
     )
     shard_fns, _ = make_shard_and_gather_fns(
         model_ps, get_float_dtype_by_name(FLAGS.dtype)

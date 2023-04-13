@@ -290,64 +290,41 @@ def float_to_dtype(tree, dtype):
     )
 
 
-def flatten_tree(xs, is_leaf=None, sep=None):
-    """ A stronger version of flax.traverse_util.flatten_dict, supports
-        dict, tuple, list and TrainState. Tuple and list indices will be
-        converted to strings.
-    """
-    tree_node_classes = (FrozenDict, dict, tuple, list, TrainState)
-    if not isinstance(xs, tree_node_classes):
-        ValueError('fUnsupported node type: {type(xs)}')
-
-    def _is_leaf(prefix, fx):
-        if is_leaf is not None:
-            return is_leaf(prefix, xs)
-        return False
-
-    def _key(path):
-        if sep is None:
-            return path
-        return sep.join(path)
-
-    def _convert_to_dict(xs):
-        if isinstance(xs, (FrozenDict, dict)):
-            return xs
-        elif isinstance(xs, (tuple, list)):
-            return {f'{i}': v for i, v in enumerate(xs)}
-        elif isinstance(xs, TrainState):
-            output = {}
-            for field in dataclasses.fields(xs):
-                if 'pytree_node' not in field.metadata or field.metadata['pytree_node']:
-                    output[field.name] = getattr(xs, field.name)
-            return output
+def tree_path_to_string(path, sep=None):
+    keys = []
+    for key in path:
+        if isinstance(key, jax.tree_util.SequenceKey):
+            keys.append(str(key.idx))
+        elif isinstance(key, jax.tree_util.DictKey):
+            keys.append(str(key.key))
+        elif isinstance(key, jax.tree_util.GetAttrKey):
+            keys.append(str(key.name))
+        elif isinstance(key, jax.tree_util.FlattenedIndexKey):
+            keys.append(str(key.key))
         else:
-            raise ValueError('fUnsupported node type: {type(xs)}')
-
-    def _flatten(xs, prefix):
-        if not isinstance(xs, tree_node_classes) or _is_leaf(prefix, xs):
-            return {_key(prefix): xs}
-
-        result = {}
-        is_empty = True
-        for (key, value) in _convert_to_dict(xs).items():
-            is_empty = False
-            path = prefix + (key, )
-            result.update(_flatten(value, path))
-        return result
-
-    return _flatten(xs, ())
+            keys.append(str(key))
+    if sep is None:
+        return tuple(keys)
+    return sep.join(keys)
 
 
-def named_tree_map(f, tree, is_leaf=None, sep=None):
+def flatten_tree(xs, is_leaf=None, sep=None):
+    flattened, _ = jax.tree_util.tree_flatten_with_path(xs, is_leaf=is_leaf)
+    output = {}
+    for key, val in flattened:
+        output[tree_path_to_string(key, sep=sep)] = val
+    return output
+
+
+def named_tree_map(f, tree, *rest, is_leaf=None, sep=None):
     """ An extended version of jax.tree_util.tree_map, where the mapped function
         f takes both the name (path) and the tree leaf as input.
     """
-    flattened_tree = flatten_tree(tree, is_leaf=is_leaf, sep=sep)
-    id_to_name = {id(val): key for key, val in flattened_tree.items()}
-    def map_fn(leaf):
-        name = id_to_name[id(leaf)]
-        return f(name, leaf)
-    return jax.tree_util.tree_map(map_fn, tree)
+    return jax.tree_util.tree_map_with_path(
+        lambda path, x, *r: f(tree_path_to_string(path, sep=sep), x, *r),
+        tree, *rest,
+        is_leaf=is_leaf
+    )
 
 
 def match_partition_rules(rules, params):

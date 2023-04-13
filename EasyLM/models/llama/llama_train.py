@@ -9,7 +9,7 @@ import mlxu
 
 import jax
 import jax.numpy as jnp
-from jax.experimental.pjit import pjit, with_sharding_constraint
+from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as PS
 import flax
 from flax import linen as nn
@@ -24,7 +24,7 @@ from EasyLM.jax_utils import (
     JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
-    make_shard_and_gather_fns, tree_apply
+    make_shard_and_gather_fns, with_sharding_constraint
 )
 from EasyLM.models.llama.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
@@ -35,6 +35,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim='-1,1',
+    fsdp=False,
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -163,7 +164,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        LLaMAConfig.get_partition_rules(), train_state_shapes
+        LLaMAConfig.get_partition_rules(FLAGS.fsdp), train_state_shapes
     )
 
     shard_fns, gather_fns = make_shard_and_gather_fns(

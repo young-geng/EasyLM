@@ -27,7 +27,6 @@ class OptimizerFactory(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.accumulate_gradient_steps = 1
-        config.bf16_accumulate_gradient = True
         config.type = 'adamw'
         config.palm_optimizer = PalmOptimizerFactory.get_default_config()
         config.adamw_optimizer = AdamWOptimizerFactory.get_default_config()
@@ -51,12 +50,7 @@ class OptimizerFactory(object):
             raise ValueError(f'Unknown optimizer type: {config.type}')
 
         if config.accumulate_gradient_steps > 1:
-            if config.bf16_accumulate_gradient:
-                accumulator_class = AccumulateGradientBF16
-            else:
-                accumulator_class = optax.MultiSteps
-
-            optimizer = accumulator_class(
+            optimizer = optax.MultiSteps(
                 optimizer, config.accumulate_gradient_steps
             )
 
@@ -221,90 +215,3 @@ def optax_add_scheduled_weight_decay(schedule_fn, mask=None):
     if mask is not None:
         return optax.masked(optax.GradientTransformation(init_fn, update_fn), mask)
     return optax.GradientTransformation(init_fn, update_fn)
-
-
-class AccumulateGradientBF16(optax.MultiSteps):
-    """ Customized optax MultiSteps to accumulate gradients with bf16 dtype. """
-
-    def init(self, params):
-        updates = jax.tree_util.tree_map(
-            jnp.zeros_like, float_to_dtype(params, jnp.bfloat16)
-        )
-        gradient_step = jnp.zeros([], dtype=jnp.int32)
-        _, skip_state = self._should_skip_update_fn(updates, gradient_step, params)
-        init_state = optax.MultiStepsState(
-            mini_step=jnp.zeros([], dtype=jnp.int32),
-            gradient_step=gradient_step,
-            inner_opt_state=self._opt.init(params),
-            acc_grads=updates,
-            skip_state=skip_state
-        )
-        return init_state
-
-    def update(self, updates, state, params, **extra_args):
-        k_steps = self._every_k_schedule(state.gradient_step)
-        acc_grads = jax.tree_util.tree_map(
-            partial(self._acc_update, n_acc=state.mini_step),
-            float_to_dtype(updates, jnp.bfloat16), state.acc_grads
-        )
-
-        should_skip_update, skip_state = self._should_skip_update_fn(
-            updates, state.gradient_step, params
-        )
-
-        def final_step(args):
-            del args
-            final_updates, new_inner_state = self._opt.update(
-                acc_grads, state.inner_opt_state, params=params, **extra_args
-            )
-            new_state = optax.MultiStepsState(
-                mini_step=jnp.zeros([], dtype=jnp.int32),
-                gradient_step=optax._src.numerics.safe_int32_increment(state.gradient_step),
-                inner_opt_state=new_inner_state,
-                acc_grads=jax.tree_util.tree_map(jnp.zeros_like, acc_grads),
-                skip_state=skip_state
-            )
-            return final_updates, new_state
-
-        def mid_step(args):
-            del args
-            updates_shape_dtype, _ = jax.eval_shape(
-                self._opt.update, acc_grads, state.inner_opt_state, params=params
-            )
-            mid_updates = jax.tree_util.tree_map(
-                lambda sd: jnp.zeros(sd.shape, sd.dtype), updates_shape_dtype
-            )
-            new_state = optax.MultiStepsState(
-                mini_step=optax._src.numerics.safe_int32_increment(state.mini_step),
-                gradient_step=state.gradient_step,
-                inner_opt_state=state.inner_opt_state,
-                acc_grads=acc_grads,
-                skip_state=skip_state
-            )
-            return mid_updates, new_state
-
-        new_updates, new_state = jax.lax.cond(
-            state.mini_step < k_steps - 1, (), mid_step, (), final_step
-        )
-
-        if (should_skip_update.dtype, should_skip_update.shape) != (jnp.bool_, ()):
-            raise ValueError(
-                'The `should_skip_update_fn` function should return a boolean scalar '
-                f'array, but it returned an array of dtype {should_skip_update.dtype}'
-                f' and shape {should_skip_update.shape}'
-            )
-
-        multi_state_when_skip = optax.MultiStepsState(
-            mini_step=state.mini_step,
-            gradient_step=state.gradient_step,
-            inner_opt_state=state.inner_opt_state,
-            acc_grads=state.acc_grads,
-            skip_state=skip_state
-        )
-        zero_updates = jax.tree_util.tree_map(jnp.zeros_like, updates)
-        new_updates, new_state = jax.lax.cond(
-            should_skip_update,
-            (), lambda args: (zero_updates, multi_state_when_skip),
-            (), lambda args: (new_updates, new_state)
-        )
-        return new_updates, new_state

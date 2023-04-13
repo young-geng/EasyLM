@@ -33,6 +33,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mp_mesh_dim=-1,
+    fsdp=False,
     total_steps=10000,
     load_gptj_config='',
     update_gptj_config='',
@@ -161,7 +162,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        GPTJConfig.get_partition_rules(), train_state_shapes
+        GPTJConfig.get_partition_rules(FLAGS.fsdp), train_state_shapes
     )
 
     shard_fns, gather_fns = make_shard_and_gather_fns(

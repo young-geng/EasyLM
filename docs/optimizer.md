@@ -30,7 +30,6 @@ The following options are supported for the optimizer module:
 * `adamw_optimizer`: the configuration for the AdamW optimizer
 * `palm_optimizer`: the configuration for the PaLM optimizer
 * `accumulate_gradient_steps`: the number of steps for gradient accumulation
-* `bf16_accumulate_gradient`: whether to use bf16 for gradient accumulation to save memory
 
 
 ## AdamW Optimizer

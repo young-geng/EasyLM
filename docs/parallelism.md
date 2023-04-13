@@ -35,3 +35,11 @@ model parallelism axis, and we only have 1 replica for data parallelism. Note th
 we can use `-1` for one of the axis dimensions, which means that the axis dimension
 will be the total number of accelerators. For example, on a 8 accelerator machine,
 specifying `-1,1` for `mp_mesh_dim` is equivalent to specifying `8,1`.
+
+
+## Fully Sharded Data Parallelism
+Some models in EasyLM support fully sharded data parallelism, which can further
+reduce the memory footprint by sharding the model parameters also along the
+data parallelism axis. This is done by setting the `fsdp` option to `True` in
+the training or serving script. For more information about FSDP, please refer
+to [this FSDP tutorial](https://engineering.fb.com/2021/07/15/open-source/fsdp/).
