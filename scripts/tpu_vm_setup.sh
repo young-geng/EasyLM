@@ -27,6 +27,7 @@ transformers==4.27.2
 datasets==2.9.0
 huggingface_hub==0.13.3
 tqdm
+h5py
 ml_collections
 wandb==0.13.5
 gcsfs==2022.11.0

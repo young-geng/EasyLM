@@ -3,6 +3,7 @@ import pprint
 from functools import partial
 import json
 
+import h5py
 import mlxu
 from ml_collections.config_dict import config_dict
 from ml_collections import ConfigDict
@@ -137,14 +138,20 @@ class HuggingfaceDataset(object):
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
+        total_tokens = 0
         while True:
             token_buffer = []
             loss_mask_buffer = []
-            for example in self._dataset:
+            for index, example in enumerate(self._dataset):
                 tokens, loss_masks = self.text_processor(example)
                 token_buffer.extend(tokens)
                 loss_mask_buffer.extend(loss_masks)
                 while len(token_buffer) > chunk_size:
+                    total_tokens += chunk_size
+                    metrics = {
+                        'dataset_example_index': index,
+                        'dataset_total_tokens': total_tokens,
+                    }
                     yield {
                         'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                             self.config.batch_size, -1
@@ -152,7 +159,7 @@ class HuggingfaceDataset(object):
                         'loss_masks': np.array(loss_mask_buffer[:chunk_size], dtype=np.float32).reshape(
                             self.config.batch_size, -1
                         ),
-                    }
+                    }, metrics
                     token_buffer = token_buffer[chunk_size:]
                     loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
@@ -193,6 +200,8 @@ class JsonDataset(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.path = ''
+        config.h5_field = ''
+        config.h5_start_index = 0
         config.seq_length = 1024
         config.batch_size = 8
 
@@ -206,28 +215,58 @@ class JsonDataset(object):
         self._tokenizer = tokenizer
         self._text_processor = text_processor
 
+    def parse_json(self, line):
+        if not line or line == '\n':
+            return None
+        try:
+            data = json.loads(line)
+        except json.decoder.JSONDecodeError:
+            print(f'Error parsing json line:\n{line}')
+            return None
+        return data
+
     def json_iterator(self):
-        while True:
-            with mlxu.open_file(self.config.path, 'r') as fin:
-                for line in fin:
-                    if not line or line == '\n':
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except json.decoder.JSONDecodeError:
-                        print(f'Error parsing json line:\n{line}')
-                        continue
-                    yield data
+        if self.config.h5_field != '':
+            h5_file = h5py.File(
+                mlxu.open_file(self.config.path, 'rb', cache_type='block'), 'r'
+            )
+            length = h5_file[self.config.h5_field].shape[0]
+            index = self.config.h5_start_index % length
+            while True:
+                data = self.parse_json(
+                    mlxu.array_to_text(
+                        h5_file[self.config.h5_field][index]
+                    )
+                )
+                if data is not None:
+                    yield index, data
+
+                index += 1
+                if index >= length:
+                    index = 0
+        else:
+            while True:
+                with mlxu.open_file(self.config.path, 'r') as fin:
+                    for index, line in enumerate(fin):
+                        data = self.parse_json(line)
+                        if data is not None:
+                            yield index, data
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
         token_buffer = []
         loss_mask_buffer = []
-        for example in self.json_iterator():
+        total_tokens = 0
+        for index, example in self.json_iterator():
             tokens, loss_masks = self.text_processor(example)
             token_buffer.extend(tokens)
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size:
+                total_tokens += chunk_size
+                metrics = {
+                    'dataset_example_index': index,
+                    'dataset_total_tokens': total_tokens,
+                }
                 yield {
                     'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                         self.config.batch_size, -1
@@ -235,7 +274,7 @@ class JsonDataset(object):
                     'loss_masks': np.array(loss_mask_buffer[:chunk_size], dtype=np.float32).reshape(
                         self.config.batch_size, -1
                     ),
-                }
+                }, metrics
                 token_buffer = token_buffer[chunk_size:]
                 loss_mask_buffer = loss_mask_buffer[chunk_size:]
 

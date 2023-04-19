@@ -247,7 +247,7 @@ def main(argv):
 
         step_counter = trange(start_step, FLAGS.total_steps, ncols=0)
 
-        for step, batch in zip(step_counter, dataset):
+        for step, (batch, dataset_metrics) in zip(step_counter, dataset):
             train_state, sharded_rng, metrics = sharded_train_step(
                 train_state, sharded_rng, batch
             )
@@ -256,14 +256,16 @@ def main(argv):
                 if FLAGS.eval_steps > 0:
                     eval_metric_list = []
                     for _ in range(FLAGS.eval_steps):
+                        eval_batch, _ = next(eval_iterator)
                         sharded_rng, eval_metrics = sharded_eval_step(
-                            train_state, sharded_rng, next(eval_iterator)
+                            train_state, sharded_rng, eval_batch
                         )
                         eval_metric_list.append(eval_metrics)
                     metrics.update(average_metrics(eval_metric_list))
 
                 log_metrics = {"step": step}
                 log_metrics.update(metrics)
+                log_metrics.update(dataset_metrics)
                 log_metrics = jax.device_get(log_metrics)
                 logger.log(log_metrics)
                 tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
