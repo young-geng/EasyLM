@@ -200,6 +200,7 @@ class JsonDataset(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.path = ''
+        config.start_seek_loc = 0
         config.h5_field = ''
         config.h5_start_index = 0
         config.seq_length = 1024
@@ -239,31 +240,42 @@ class JsonDataset(object):
                     )
                 )
                 if data is not None:
-                    yield index, data
+                    yield 0, index, data
 
                 index += 1
                 if index >= length:
                     index = 0
         else:
-            while True:
-                with mlxu.open_file(self.config.path, 'r') as fin:
-                    for index, line in enumerate(fin):
-                        data = self.parse_json(line)
-                        if data is not None:
-                            yield index, data
+            with mlxu.open_file(self.config.path, 'r') as fin:
+                fin.seek(self.config.start_seek_loc)
+                index = 0
+                while True:
+                    line = fin.readline()
+                    loc = fin.tell()
+                    if not line:   # Reached EOF
+                        index = 0
+                        fin.seek(0)
+                        continue
+
+                    data = self.parse_json(line)
+                    if data is not None:
+                        # JSON parsing succeeded
+                        yield loc, index, data
+                    index += 1
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
         token_buffer = []
         loss_mask_buffer = []
         total_tokens = 0
-        for index, example in self.json_iterator():
+        for loc, index, example in self.json_iterator():
             tokens, loss_masks = self.text_processor(example)
             token_buffer.extend(tokens)
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size:
                 total_tokens += chunk_size
                 metrics = {
+                    'dataset_file_loc': loc,
                     'dataset_example_index': index,
                     'dataset_total_tokens': total_tokens,
                 }
