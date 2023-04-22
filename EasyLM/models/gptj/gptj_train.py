@@ -21,7 +21,7 @@ from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules,
+    JaxRNG, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
@@ -32,8 +32,7 @@ from EasyLM.models.gptj.gptj_model import GPTJConfig, FlaxGPTJForCausalLMModule
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=-1,
-    fsdp=False,
+    mesh_dim='1,-1,1',
     total_steps=10000,
     load_gptj_config='',
     update_gptj_config='',
@@ -117,8 +116,8 @@ def main(argv):
 
     def train_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
-        loss_masks = with_sharding_constraint(batch['loss_masks'], PS('dp'))
+        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
+        loss_masks = with_sharding_constraint(batch['loss_masks'], PS(('dp', 'fsdp')))
         def loss_and_accuracy(params):
             bos_tokens = jnp.full(
                 (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
@@ -143,8 +142,8 @@ def main(argv):
 
     def eval_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
-        loss_masks = with_sharding_constraint(batch['loss_masks'], PS('dp'))
+        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
+        loss_masks = with_sharding_constraint(batch['loss_masks'], PS(('dp', 'fsdp')))
         bos_tokens = jnp.full(
             (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
         )
@@ -162,7 +161,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        GPTJConfig.get_partition_rules(FLAGS.fsdp), train_state_shapes
+        GPTJConfig.get_partition_rules(), train_state_shapes
     )
 
     shard_fns, gather_fns = make_shard_and_gather_fns(
@@ -216,7 +215,7 @@ def main(argv):
             milestone=milestone,
         )
 
-    mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
+    mesh = GPTJConfig.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
         train_state, restored_params = None, None
         if FLAGS.load_checkpoint != '':

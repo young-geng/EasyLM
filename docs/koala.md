@@ -53,7 +53,7 @@ python -m EasyLM.models.llama.llama_serve \
     --load_llama_config='13b' \
     --load_checkpoint="params::/path/to/recovered/checkpoint" \
     --tokenizer.vocab_file='/path/to/tokenizer.model' \
-    --mp_mesh_dim='-1,1' \
+    --mesh_dim='1,1,-1' \
     --dtype='bf16' \
     --input_length=1024 \
     --seq_length=2048 \

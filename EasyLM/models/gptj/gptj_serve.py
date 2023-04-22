@@ -24,7 +24,7 @@ from transformers import GenerationConfig, FlaxLogitsProcessorList
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
-    JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules, tree_apply,
+    JaxRNG, next_rng, match_partition_rules, tree_apply,
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
@@ -36,8 +36,7 @@ from EasyLM.models.gptj.gptj_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=-1,
-    fsdp=False,
+    mesh_dim='1,-1,1',
     dtype='bf16',
     input_length=1024,
     seq_length=2048,
@@ -83,7 +82,7 @@ def main(argv):
         )
 
     model_ps = match_partition_rules(
-        GPTJConfig.get_partition_rules(FLAGS.fsdp), params
+        GPTJConfig.get_partition_rules(), params
     )
     shard_fns, _ = make_shard_and_gather_fns(
         model_ps, get_float_dtype_by_name(FLAGS.dtype)
@@ -95,7 +94,7 @@ def main(argv):
         out_shardings=(PS(), PS(), PS())
     )
     def forward_loglikelihood(params, rng, batch):
-        batch = with_sharding_constraint(batch, PS('dp'))
+        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         rng_generator = JaxRNG(rng)
         input_tokens = batch['input_tokens']
         output_tokens = batch['output_tokens']
@@ -127,7 +126,7 @@ def main(argv):
         out_shardings=(PS(), PS())
     )
     def forward_generate(params, rng, batch, temperature):
-        batch = with_sharding_constraint(batch, PS('dp'))
+        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         rng_generator = JaxRNG(rng)
         output = hf_model.generate(
             batch['input_tokens'],
@@ -156,7 +155,7 @@ def main(argv):
         out_shardings=(PS(), PS())
     )
     def forward_greedy_generate(params, rng, batch):
-        batch = with_sharding_constraint(batch, PS('dp'))
+        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         rng_generator = JaxRNG(rng)
         output = hf_model.generate(
             batch['input_tokens'],
@@ -174,7 +173,7 @@ def main(argv):
         ).sequences[:, batch['input_tokens'].shape[1]:]
         return output, rng_generator()
 
-    mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
+    mesh = GPTJConfig.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
         params = tree_apply(shard_fns, params)
         sharded_rng = next_rng()

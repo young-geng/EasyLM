@@ -55,6 +55,8 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle
 
+from EasyLM.jax_utils import with_sharding_constraint, get_jax_mesh
+
 
 """
 The follow code is taken from
@@ -186,23 +188,27 @@ class RobertaConfig(PretrainedConfig):
         return config
 
     @staticmethod
+    def get_jax_mesh(axis_dims):
+        return get_jax_mesh(axis_dims, ('dp', 'fsdp', 'mp'))
+
+    @staticmethod
     def get_partition_rules():
         """ Parition rules for Roberta model. """
         return (
             ('embeddings/(position_embeddings|token_type_embeddings)/embedding', PartitionSpec()),
             ('embeddings/word_embeddings/embedding', PartitionSpec()),
-            ('attention/self/(key|query|value)/kernel', PartitionSpec(None, 'mp')),
+            ('attention/self/(key|query|value)/kernel', PartitionSpec('fsdp', 'mp')),
             ('attention/self/(key|query|value)/bias', PartitionSpec()),
-            ('attention/output/dense/kernel', PartitionSpec('mp', None)),
+            ('attention/output/dense/kernel', PartitionSpec('mp', 'fsdp')),
             ('attention/output/dense/bias', PartitionSpec()),
             ('(LayerNorm|layer_norm)/(bias|scale)', PartitionSpec()),
-            ('intermediate/dense/kernel', PartitionSpec(None, 'mp')),
+            ('intermediate/dense/kernel', PartitionSpec('fsdp', 'mp')),
             ('intermediate/dense/bias', PartitionSpec('mp')),
-            ('output/dense/kernel', PartitionSpec('mp', None)),
+            ('output/dense/kernel', PartitionSpec('mp', 'fsdp')),
             ('output/dense/bias', PartitionSpec()),
             ('lm_head/dense/kernel', PartitionSpec()),
             ('lm_head/dense/bias', PartitionSpec()),
-            ('lm_head/decoder/kernel', PartitionSpec(None, 'mp')),
+            ('lm_head/decoder/kernel', PartitionSpec('fsdp', 'mp')),
             ('lm_head/decoder/bias', PartitionSpec('mp')),
             ('.*', PartitionSpec()),
         )

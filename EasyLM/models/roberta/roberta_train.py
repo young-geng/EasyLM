@@ -21,7 +21,7 @@ from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, get_jax_mp_mesh, next_rng, match_partition_rules,
+    JaxRNG, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
@@ -34,7 +34,7 @@ from EasyLM.models.roberta.roberta_model import (
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
-    mp_mesh_dim=-1,
+    mesh_dim='-1,1,1',
     mask_token_probability=0.15,
     total_steps=10000,
     load_roberta_config='',
@@ -120,7 +120,7 @@ def main(argv):
 
     def train_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
+        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
         def loss_and_accuracy(params):
             altered_tokens = jax.random.uniform(
                 rng_generator(), shape=tokens.shape
@@ -157,7 +157,7 @@ def main(argv):
 
     def eval_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS('dp'))
+        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
         altered_tokens = jax.random.uniform(
             rng_generator(), shape=tokens.shape
         ) < FLAGS.mask_token_probability
@@ -241,7 +241,7 @@ def main(argv):
             milestone=milestone,
         )
 
-    mesh = get_jax_mp_mesh(FLAGS.mp_mesh_dim)
+    mesh = RobertaConfig.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
         train_state, restored_params = None, None
         if FLAGS.load_checkpoint != '':

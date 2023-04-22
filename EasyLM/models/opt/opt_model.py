@@ -42,7 +42,7 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.jax_utils import with_sharding_constraint
+from EasyLM.jax_utils import with_sharding_constraint, get_jax_mesh
 
 
 remat = nn_partitioning.remat
@@ -251,6 +251,10 @@ class OPTConfig(PretrainedConfig):
         return config
 
     @staticmethod
+    def get_jax_mesh(axis_dims):
+        return get_jax_mesh(axis_dims, ('dp', 'fsdp', 'mp'))
+
+    @staticmethod
     def get_partition_rules():
         """ Parition rules for GPTJ. Note that these rules are orderd, so that
             the beginning rules match first. It is important to use
@@ -258,18 +262,18 @@ class OPTConfig(PretrainedConfig):
             None as a pytree leaf.
         """
         return (
-            ('embed_tokens/embedding', PartitionSpec(None, 'mp')),
-            ('self_attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec(None, 'mp')),
-            ('self_attn/out_proj/kernel', PartitionSpec('mp', None)),
-            ('fc1/kernel', PartitionSpec(None, 'mp')),
+            ('embed_tokens/embedding', PartitionSpec('fsdp', 'mp')),
+            ('self_attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec('fsdp', 'mp')),
+            ('self_attn/out_proj/kernel', PartitionSpec('mp', 'fsdp')),
+            ('fc1/kernel', PartitionSpec('fsdp', 'mp')),
             ('fc1/bias', PartitionSpec('mp')),
-            ('fc2/kernel', PartitionSpec('mp', None)),
+            ('fc2/kernel', PartitionSpec('mp', 'fsdp')),
             ('fc2/bias', PartitionSpec()),
             ('self_attn_layer_norm/bias', PartitionSpec()),
             ('self_attn_layer_norm/scale', PartitionSpec()),
             ('final_layer_norm/bias', PartitionSpec()),
             ('final_layer_norm/scale', PartitionSpec()),
-            ('lm_head/kernel', PartitionSpec(None, 'mp')),
+            ('lm_head/kernel', PartitionSpec('fsdp', 'mp')),
             ('lm_head/bias', PartitionSpec('mp')),
             ('.*', PartitionSpec()),
         )

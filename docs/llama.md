@@ -29,7 +29,7 @@ To fine-tune LLaMA, use the following command:
 
 ``` shell
 python -m EasyLM.models.llama.llama_train \
-    --mp_mesh_dims='-1,1' \
+    --mesh_dims='1,-1,1' \
     --load_llama_config='13b' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
@@ -38,11 +38,9 @@ python -m EasyLM.models.llama.llama_train \
 The following command line options are supported for the training script:
 * `seed`: The random seed to use for the training script.
 * `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
-* `mp_mesh_dims`: The mesh dimensions for the model parallelism. LLaMA uses
-  2D mesh so a comma separated list of 2 values are required. See
+* `mesh_dim`: The mesh dimensions for the data, fully sharded data and model parallelism.
+  LLaMA uses 3D mesh so a comma separated list of 3 values are required. See
   [the parallelism documentation](parallelism.md) for more details.
-* `fsdp`: whether to use fully sharded data parallelism for the data parallel
-  mesh axis. See [the parallelism documentation](parallelism.md) for more details.
 * `total_steps`: The total number of training steps.
 * `load_llama_config`: the LLaMA configuration to use. Can be `7b`, `13b`, or
   `30b` or `65b`.
@@ -83,7 +81,7 @@ following command:
 
 ``` shell
 python -m EasyLM.models.llama.llama_serve \
-    --mp_mesh_dims='-1,1' \
+    --mesh_dims='1,1,-1' \
     --load_llama_config='13B' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
@@ -92,11 +90,9 @@ python -m EasyLM.models.llama.llama_serve \
 The following command line options are supported for the serving script:
 * `seed`: The random seed to use for the serving script.
 * `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
-* `mp_mesh_dims`: The mesh dimensions for the model parallelism. LLaMA uses
-  2D mesh so a comma separated list of 2 values are required. See
+* `mesh_dim`: The mesh dimensions for the data, fully sharded data and model parallelism.
+  LLaMA uses 3D mesh so a comma separated list of 3 values are required. See
   [the parallelism documentation](parallelism.md) for more details.
-* `fsdp`: whether to use fully sharded data parallelism for the data parallel
-  mesh axis. See [the parallelism documentation](parallelism.md) for more details.
 * `dtype`: the float dtype to use for the model. Can be `bf16` or `fp16` or `fp32`.
 * `input_length`: the maximum length of the input sequence.
 * `seq_length`: the maximum length of the total sequence (input and output).

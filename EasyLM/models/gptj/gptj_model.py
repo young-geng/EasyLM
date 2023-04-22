@@ -43,7 +43,7 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.jax_utils import with_sharding_constraint
+from EasyLM.jax_utils import with_sharding_constraint, get_jax_mesh
 
 
 """
@@ -181,46 +181,32 @@ class GPTJConfig(PretrainedConfig):
         return config
 
     @staticmethod
-    def get_partition_rules(fsdp=False):
+    def get_jax_mesh(axis_dims):
+        return get_jax_mesh(axis_dims, ('dp', 'fsdp', 'mp'))
+
+    @staticmethod
+    def get_partition_rules():
         """ Parition rules for GPTJ. Note that these rules are orderd, so that
             the beginning rules match first. It is important to use
             PartitionSpec() instead of None here because JAX does not treat
             None as a pytree leaf.
         """
-        if fsdp:
-            return (
-                ('transformer/wte/embedding', PartitionSpec('mp', 'dp')),
-                ('attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec('dp', 'mp')),
-                ('attn/out_proj/kernel', PartitionSpec('mp', 'dp')),
-                ('mlp/fc_in/kernel', PartitionSpec('dp', 'mp')),
-                ('mlp/fc_in/bias', PartitionSpec('mp')),
-                ('mlp/fc_out/kernel', PartitionSpec('mp', 'dp')),
-                ('mlp/fc_out/bias', PartitionSpec()),
-                ('ln_[0-9]+/bias', PartitionSpec()),
-                ('[0-9]+/ln_[0-9]+/scale', PartitionSpec()),
-                ('ln_f/bias', PartitionSpec()),
-                ('ln_f/scale', PartitionSpec()),
-                ('lm_head/kernel', PartitionSpec('dp', 'mp')),
-                ('lm_head/bias', PartitionSpec('mp')),
-                ('.*', PartitionSpec()),
-            )
-        else:
-            return (
-                ('transformer/wte/embedding', PartitionSpec('mp', None)),
-                ('attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec(None, 'mp')),
-                ('attn/out_proj/kernel', PartitionSpec('mp', None)),
-                ('mlp/fc_in/kernel', PartitionSpec(None, 'mp')),
-                ('mlp/fc_in/bias', PartitionSpec('mp')),
-                ('mlp/fc_out/kernel', PartitionSpec('mp', None)),
-                ('mlp/fc_out/bias', PartitionSpec()),
-                ('ln_[0-9]+/bias', PartitionSpec()),
-                ('[0-9]+/ln_[0-9]+/scale', PartitionSpec()),
-                ('ln_f/bias', PartitionSpec()),
-                ('ln_f/scale', PartitionSpec()),
-                ('lm_head/kernel', PartitionSpec(None, 'mp')),
-                ('lm_head/bias', PartitionSpec('mp')),
-                ('.*', PartitionSpec()),
-            )
+        return (
+            ('transformer/wte/embedding', PartitionSpec('mp', 'fsdp')),
+            ('attn/(k_proj|q_proj|v_proj)/kernel', PartitionSpec('fsdp', 'mp')),
+            ('attn/out_proj/kernel', PartitionSpec('mp', 'fsdp')),
+            ('mlp/fc_in/kernel', PartitionSpec('fsdp', 'mp')),
+            ('mlp/fc_in/bias', PartitionSpec('mp')),
+            ('mlp/fc_out/kernel', PartitionSpec('mp', 'fsdp')),
+            ('mlp/fc_out/bias', PartitionSpec()),
+            ('ln_[0-9]+/bias', PartitionSpec()),
+            ('[0-9]+/ln_[0-9]+/scale', PartitionSpec()),
+            ('ln_f/bias', PartitionSpec()),
+            ('ln_f/scale', PartitionSpec()),
+            ('lm_head/kernel', PartitionSpec('fsdp', 'mp')),
+            ('lm_head/bias', PartitionSpec('mp')),
+            ('.*', PartitionSpec()),
+        )
 
     @staticmethod
     def get_weight_decay_exclusions():
