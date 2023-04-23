@@ -43,7 +43,9 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.jax_utils import with_sharding_constraint, get_jax_mesh
+from EasyLM.jax_utils import (
+    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
+)
 
 
 """
@@ -132,7 +134,7 @@ class GPTJConfig(PretrainedConfig):
         bos_token_id=50256,
         eos_token_id=50256,
         tie_word_embeddings=False,
-        gradient_checkpointing=True,
+        gradient_checkpointing='nothing_saveable',
         n_real_tokens=50257,
         fcm_min_ratio=0.0,
         fcm_max_ratio=0.0,
@@ -772,8 +774,11 @@ class FlaxGPTJBlockCollection(nn.Module):
 
     def setup(self):
         block = FlaxGPTJBlock
-        if self.config.gradient_checkpointing:
-            FlaxGPT2CheckpointBlock = remat(block, static_argnums=(3, 4, 5))
+        if self.config.gradient_checkpointing != '':
+            FlaxGPT2CheckpointBlock = remat(
+                block, static_argnums=(3, 4, 5),
+                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
+            )
             block = FlaxGPT2CheckpointBlock
         self.blocks = [
             block(self.config, name=str(i), dtype=self.dtype) for i in range(self.config.num_hidden_layers)

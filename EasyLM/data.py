@@ -1,5 +1,6 @@
 import dataclasses
 import pprint
+import time
 from functools import partial
 import json
 
@@ -268,6 +269,7 @@ class JsonDataset(object):
         token_buffer = []
         loss_mask_buffer = []
         total_tokens = 0
+        last_time = 0.0
         for loc, index, example in self.json_iterator():
             tokens, loss_masks = self.text_processor(example)
             token_buffer.extend(tokens)
@@ -278,7 +280,9 @@ class JsonDataset(object):
                     'dataset_file_loc': loc,
                     'dataset_example_index': index,
                     'dataset_total_tokens': total_tokens,
+                    'dataset_throughput_tps': chunk_size / (time.time() - last_time),
                 }
+                last_time = time.time()
                 yield {
                     'tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                         self.config.batch_size, -1

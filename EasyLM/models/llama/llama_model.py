@@ -28,7 +28,9 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.jax_utils import with_sharding_constraint, get_jax_mesh
+from EasyLM.jax_utils import (
+    with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
+)
 
 
 LLAMA_STANDARD_CONFIGS = {
@@ -157,7 +159,7 @@ class LLaMAConfig(PretrainedConfig):
         embd_pdrop=0.0,
         attn_pdrop=0.0,
         tie_word_embeddings=False,
-        gradient_checkpointing=True,
+        gradient_checkpointing='nothing_saveable',
         fcm_min_ratio=0.0,
         fcm_max_ratio=0.0,
         **kwargs,
@@ -761,10 +763,10 @@ class FlaxLLaMABlockCollection(nn.Module):
 
     def setup(self):
         block = FlaxLLaMABlock
-        if self.config.gradient_checkpointing:
+        if self.config.gradient_checkpointing != '':
             FlaxLLaMACheckpointBlock = remat(
                 block, static_argnums=(3, 4, 5),
-                policy=jax.checkpoint_policies.nothing_saveable
+                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
             )
             block = FlaxLLaMACheckpointBlock
         self.blocks = [
