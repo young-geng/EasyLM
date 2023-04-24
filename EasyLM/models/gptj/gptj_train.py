@@ -66,11 +66,10 @@ def main(argv):
     )
     set_random_seed(FLAGS.seed)
 
+    tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
+    dataset = DatasetFactory.load_dataset(FLAGS.train_dataset, tokenizer)
     if FLAGS.load_dataset_state != '':
-        dataset = mlxu.load_pickle(FLAGS.load_dataset_state)
-    else:
-        tokenizer = GPTJConfig.get_tokenizer(FLAGS.tokenizer)
-        dataset = DatasetFactory.load_dataset(FLAGS.train_dataset, tokenizer)
+        dataset.load_state_dict(mlxu.load_pickle(FLAGS.load_dataset_state))
 
     if FLAGS.eval_steps > 0:
         eval_dataset = DatasetFactory.load_dataset(
@@ -211,7 +210,7 @@ def main(argv):
             train_state=train_state,
             gather_fns=gather_fns,
             metadata=metadata,
-            dataset=dataset,
+            dataset=dataset.get_state_dict(),
             milestone=milestone,
         )
 

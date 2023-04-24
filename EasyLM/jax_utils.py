@@ -115,9 +115,20 @@ def set_random_seed(seed):
 
 
 def get_jax_mesh(axis_dims, names):
-    axis_dims = [int(x) for x in axis_dims.split(',')]
-    assert len(axis_dims) == len(names)
-    return Mesh(np.array(jax.devices()).reshape(axis_dims), names)
+    if ':' in axis_dims:
+        dims = []
+        dim_names = []
+        for axis in axis_dims.split(','):
+            name, dim = axis.split(':')
+            assert name in names
+            dims.append(int(dim))
+            dim_names.append(name)
+        assert(set(dim_names) == set(names))
+    else:
+        dims = [int(x) for x in axis_dims.split(',')]
+        dim_names = names
+    assert len(dims) == len(names)
+    return Mesh(np.array(jax.devices()).reshape(dims), names)
 
 
 def names_in_current_mesh(*names):

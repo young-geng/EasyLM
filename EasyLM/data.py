@@ -201,11 +201,10 @@ class JsonDataset(object):
     def get_default_config(updates=None):
         config = ConfigDict()
         config.path = ''
-        config.start_seek_loc = 0
-        config.h5_field = ''
-        config.h5_start_index = 0
         config.seq_length = 1024
         config.batch_size = 8
+        config.start_seek_loc = 0
+        config.index_at_start = 0
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -216,6 +215,8 @@ class JsonDataset(object):
         assert self.config.path != ''
         self._tokenizer = tokenizer
         self._text_processor = text_processor
+        self._index = self.config.index_at_start
+        self._file_loc = self.config.start_seek_loc
 
     def parse_json(self, line):
         if not line or line == '\n':
@@ -228,41 +229,21 @@ class JsonDataset(object):
         return data
 
     def json_iterator(self):
-        if self.config.h5_field != '':
-            h5_file = h5py.File(
-                mlxu.open_file(self.config.path, 'rb', cache_type='block'), 'r'
-            )
-            length = h5_file[self.config.h5_field].shape[0]
-            index = self.config.h5_start_index % length
+        with mlxu.open_file(self.config.path, 'r') as fin:
+            fin.seek(self._file_loc)
             while True:
-                data = self.parse_json(
-                    mlxu.array_to_text(
-                        h5_file[self.config.h5_field][index]
-                    )
-                )
+                line = fin.readline()
+                self._file_loc = fin.tell()
+                if not line:   # Reached EOF
+                    self._index = 0
+                    fin.seek(0)
+                    continue
+
+                data = self.parse_json(line)
                 if data is not None:
-                    yield 0, index, data
-
-                index += 1
-                if index >= length:
-                    index = 0
-        else:
-            with mlxu.open_file(self.config.path, 'r') as fin:
-                fin.seek(self.config.start_seek_loc)
-                index = 0
-                while True:
-                    line = fin.readline()
-                    loc = fin.tell()
-                    if not line:   # Reached EOF
-                        index = 0
-                        fin.seek(0)
-                        continue
-
-                    data = self.parse_json(line)
-                    if data is not None:
-                        # JSON parsing succeeded
-                        yield loc, index, data
-                    index += 1
+                    # JSON parsing succeeded
+                    yield self._file_loc, self._index, data
+                self._index += 1
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
@@ -294,12 +275,17 @@ class JsonDataset(object):
                 token_buffer = token_buffer[chunk_size:]
                 loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
-    def __getstate__(self):
-        return self.config, self.tokenizer
+    def get_state_dict(self):
+        return dict(
+            config=self.config,
+            index=self._index,
+            file_loc=self._file_loc,
+        )
 
-    def __setstate__(self, state):
-        config, tokenizer = state
-        self.__init__(config, tokenizer)
+    def load_state_dict(self, state_dict):
+        self.config = state_dict.get('config', self.config)
+        self._index = state_dict.get('index', self.config.index_at_start)
+        self._file_loc = state_dict.get('file_loc', self.config.start_seek_loc)
 
     @property
     def seq_length(self):
