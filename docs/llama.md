@@ -29,7 +29,7 @@ To fine-tune LLaMA, use the following command:
 
 ``` shell
 python -m EasyLM.models.llama.llama_train \
-    --mesh_dims='1,-1,1' \
+    --mesh_dim='1,-1,1' \
     --load_llama_config='13b' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
@@ -81,7 +81,7 @@ following command:
 
 ``` shell
 python -m EasyLM.models.llama.llama_serve \
-    --mesh_dims='1,1,-1' \
+    --mesh_dim='1,1,-1' \
     --load_llama_config='13B' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
