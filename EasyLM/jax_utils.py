@@ -128,7 +128,7 @@ def get_jax_mesh(axis_dims, names):
         dims = [int(x) for x in axis_dims.split(',')]
         dim_names = names
     assert len(dims) == len(names)
-    return Mesh(np.array(jax.devices()).reshape(dims), names)
+    return Mesh(np.array(jax.devices()).reshape(dims), dim_names)
 
 
 def names_in_current_mesh(*names):
