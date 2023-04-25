@@ -19,7 +19,6 @@ dependencies:
     - cudatoolkit=11.7
     - cudatoolkit-dev=11.7
     - cudnn=8.4
-    - sentencepiece
     - pip:
         - flax==0.6.8
         - optax==0.1.4
@@ -27,6 +26,7 @@ dependencies:
         - transformers==4.27.2
         - huggingface_hub==0.13.3
         - datasets==2.9.0
+        - sentencepiece>=0.1.97
         - einops
         - tensorflow==2.11.0
         - dill

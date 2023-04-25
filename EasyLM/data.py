@@ -3,6 +3,7 @@ import pprint
 import time
 from functools import partial
 import json
+from multiprocessing import Pool
 
 import h5py
 import mlxu
@@ -68,7 +69,11 @@ class TextProcessor(object):
         )
         self.tokenizer = tokenizer
 
-    def __call__(self, example):
+    def __call__(self, example, has_aux=False):
+        if has_aux:
+            example, *aux = example
+        else:
+            aux = tuple()
         token_buffer = []
         loss_mask_buffer = []
         if self.config.fields_from_example != '':
@@ -105,7 +110,7 @@ class TextProcessor(object):
             token_buffer.append(self.tokenizer.eos_token_id)
             loss_mask_buffer.append(1.0)
 
-        return token_buffer, loss_mask_buffer
+        return token_buffer, loss_mask_buffer, *aux
 
 
 class HuggingfaceDataset(object):
@@ -205,6 +210,8 @@ class JsonDataset(object):
         config.batch_size = 8
         config.start_seek_loc = 0
         config.index_at_start = 0
+        config.tokenizer_processes = 1
+        config.tokenizer_parallel_chunk_size = 128
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -242,8 +249,22 @@ class JsonDataset(object):
                 data = self.parse_json(line)
                 if data is not None:
                     # JSON parsing succeeded
-                    yield self._file_loc, self._index, data
+                    yield data, self._file_loc, self._index
                 self._index += 1
+
+    def parallel_example_iterator(self):
+        if self.config.tokenizer_processes == 1:
+            for example, loc, index in self.json_iterator():
+                yield self.text_processor((example, loc, index), has_aux=True)
+        else:
+            with Pool(self.config.tokenizer_processes) as pool:
+                iterator = pool.imap(
+                    partial(self.text_processor, has_aux=True),
+                    self.json_iterator(),
+                    chunksize=self.config.tokenizer_parallel_chunk_size
+                )
+                for batch in iterator:
+                    yield batch
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
@@ -251,8 +272,7 @@ class JsonDataset(object):
         loss_mask_buffer = []
         total_tokens = 0
         last_time = 0.0
-        for loc, index, example in self.json_iterator():
-            tokens, loss_masks = self.text_processor(example)
+        for tokens, loss_masks, loc, index in self.parallel_example_iterator():
             token_buffer.extend(tokens)
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size:
