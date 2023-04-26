@@ -211,7 +211,8 @@ class JsonDataset(object):
         config.start_seek_loc = 0
         config.index_at_start = 0
         config.tokenizer_processes = 1
-        config.tokenizer_parallel_chunk_size = 128
+        config.tokenizer_parallel_chunk_size = 32
+        config.tokenizer_parallel_batch_size = 1024
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -252,19 +253,39 @@ class JsonDataset(object):
                     yield data, self._file_loc, self._index
                 self._index += 1
 
+    def batched(self, iterator, batch_size):
+        batch = []
+        for example in iterator:
+            batch.append(example)
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+        if len(batch) > 0:
+            yield batch
+
     def parallel_example_iterator(self):
         if self.config.tokenizer_processes == 1:
             for example, loc, index in self.json_iterator():
                 yield self.text_processor((example, loc, index), has_aux=True)
         else:
-            with Pool(self.config.tokenizer_processes) as pool:
-                iterator = pool.imap(
-                    partial(self.text_processor, has_aux=True),
-                    self.json_iterator(),
+            process_pool = Pool(self.config.tokenizer_processes)
+            batched_iterator = self.batched(
+                self.json_iterator(), self.config.tokenizer_parallel_batch_size
+            )
+            with process_pool as pool:
+                map_fn = partial(self.text_processor, has_aux=True)
+                next_batch = pool.map_async(
+                    map_fn, next(batched_iterator),
                     chunksize=self.config.tokenizer_parallel_chunk_size
                 )
-                for batch in iterator:
-                    yield batch
+                while True:
+                    current_batch = next_batch
+                    next_batch = pool.map_async(
+                        map_fn, next(batched_iterator),
+                        chunksize=self.config.tokenizer_parallel_chunk_size
+                    )
+                    for example in current_batch.get():
+                        yield example
 
     def __iter__(self):
         chunk_size = self.config.batch_size * self.config.seq_length
