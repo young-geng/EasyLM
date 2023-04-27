@@ -179,8 +179,8 @@ class AdamWOptimizerFactory(object):
                 optax.adamw(
                     learning_rate=learning_rate_schedule,
                     weight_decay=config.weight_decay,
-                    b1=0.9,
-                    b2=0.95,
+                    b1=config.b1,
+                    b2=config.b2,
                     mask=weight_decay_mask,
                     mu_dtype=jnp.bfloat16 if config.bf16_momentum else jnp.float32,
                 ),
