@@ -21,6 +21,8 @@ The `lm_eval_harness` script supports the following commnad line options:
   The supported tasks are listed in the
   [lm-eval-harness task table](https://github.com/EleutherAI/lm-evaluation-harness/blob/master/docs/task_table.md)
 * `shots`: the number of shots to use for the evaluation.
+* `batch_size`: the batch size to use for each http request. Too large a batch
+  size may cause the request to time out. Default to 1.
 * `lm_client`: the configurations for LMClient. See [the LMClient documentation](serving.md)
   for more details.
 * `logger`: the configurations for the logger. See [the logger documentation](logger.md)

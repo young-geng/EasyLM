@@ -54,6 +54,17 @@ JSON encoded dictionary. Here are the configurable options for JSON dataset:
 * `path`: Path to the text file. The file can be located on the local file system
   or on Google Cloud Storage bucket.
 * `seq_length`: The length of the tokenized sequence.
+* `batch_size`: Batch size of tokenized examples.
+* `start_seek_loc`: The starting seek location in the file. This is useful when
+  you want to resume training from a particular location in the file.
+* `index_at_start`: The counting index at the beginning. This is useful to
+  keep the index count when resuming from a particular location in the file.
+  Note that this is only for logging purpose, and does not affect the actual
+  examples starting from. To start from a different example in the dataset,
+  you should use the `start_seek_loc` option.
+* `tokenizer_processes`: The number of processes to use for tokenization.
+  Tokenization is done in parallel to speed up the loading process.
+
 
 Each loaded example is a dictionary, which will be processed by a TextProcessor
 

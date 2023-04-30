@@ -6,7 +6,7 @@ import os
 from threading import Lock
 import urllib
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel
 import absl.logging
@@ -24,7 +24,7 @@ from requests.exceptions import Timeout, ConnectionError
 class InferenceRequest(BaseModel):
     prefix_text: Optional[List[str]] = None
     text: Optional[List[str]] = None
-    until: Optional[List[str]] = None
+    until: Optional[Union[List[str], List[List[str]]]] = None
     temperature: Optional[float] = None
 
 
@@ -483,7 +483,13 @@ class LMClient(object):
     def greedy_until(self, prefix, until):
         prefix, until = list(prefix), list(until)
         if self.config.dummy:
-            return until
+            results = []
+            for u in until:
+                if isinstance(u, str):
+                    results.append('dummy text ' + u)
+                else:
+                    results.append('dummy text ' + u[0])
+            return results
         response = requests.post(
             urllib.parse.urljoin(self.config.url, 'greedy-until'),
             json={'prefix_text': prefix, 'until': until}
