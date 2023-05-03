@@ -119,7 +119,7 @@ def main(argv):
 
     def train_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
+        tokens = with_sharding_constraint(batch['target_tokens'], PS(('dp', 'fsdp')))
         def loss_and_accuracy(params):
             altered_tokens = jax.random.uniform(
                 rng_generator(), shape=tokens.shape
@@ -156,7 +156,7 @@ def main(argv):
 
     def eval_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
+        tokens = with_sharding_constraint(batch['target_tokens'], PS(('dp', 'fsdp')))
         altered_tokens = jax.random.uniform(
             rng_generator(), shape=tokens.shape
         ) < FLAGS.mask_token_probability

@@ -115,18 +115,15 @@ def main(argv):
 
     def train_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
-        loss_masks = with_sharding_constraint(batch['loss_masks'], PS(('dp', 'fsdp')))
+        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         def loss_and_accuracy(params):
-            bos_tokens = jnp.full(
-                (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
-            )
-            inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
             logits = model.apply(
-                params, inputs, deterministic=False,
+                params, batch['input_tokens'], deterministic=False,
                 rngs=rng_generator(gptj_config.rng_keys()),
             ).logits
-            return cross_entropy_loss_and_accuracy(logits, tokens, loss_masks)
+            return cross_entropy_loss_and_accuracy(
+                logits, batch['target_tokens'], batch['loss_masks']
+            )
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
         (loss, accuracy), grads = grad_fn(train_state.params)
         train_state = train_state.apply_gradients(grads=grads)
@@ -141,17 +138,14 @@ def main(argv):
 
     def eval_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
-        tokens = with_sharding_constraint(batch['tokens'], PS(('dp', 'fsdp')))
-        loss_masks = with_sharding_constraint(batch['loss_masks'], PS(('dp', 'fsdp')))
-        bos_tokens = jnp.full(
-            (tokens.shape[0], 1), gptj_config.bos_token_id, dtype=jnp.int32
-        )
-        inputs = jnp.concatenate([bos_tokens, tokens[:, :-1]], axis=1)
+        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         logits = model.apply(
-            train_state.params, inputs, deterministic=True,
+            train_state.params, batch['input_tokens'], deterministic=True,
             rngs=rng_generator(gptj_config.rng_keys()),
         ).logits
-        loss, accuracy = cross_entropy_loss_and_accuracy(logits, tokens, loss_masks)
+        loss, accuracy = cross_entropy_loss_and_accuracy(
+            logits, batch['target_tokens'], batch['loss_masks']
+        )
         metrics = dict(
             eval_loss=loss,
             eval_accuracy=accuracy,
