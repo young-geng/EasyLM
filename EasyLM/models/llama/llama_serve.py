@@ -42,7 +42,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     top_p=1.0,
     do_sample=True,
     num_beams=1,
-    loglikelihood_add_bos_token=True,
+    add_bos_token=True,
     load_llama_config='',
     load_checkpoint='',
     tokenizer=LLaMAConfig.get_tokenizer_config(),
@@ -172,7 +172,7 @@ def main(argv):
         params = tree_apply(shard_fns, params)
         sharded_rng = next_rng()
 
-    class GPTJServer(LMServer):
+    class ModelServer(LMServer):
 
         @staticmethod
         def loglikelihood(prefix_text, text):
@@ -199,7 +199,7 @@ def main(argv):
             input_mask = np.concatenate(
                 [prefix.attention_mask, inputs.attention_mask], axis=1
             )
-            if FLAGS.loglikelihood_add_bos_token:
+            if FLAGS.add_bos_token:
                 bos_mask = np.ones_like(input_mask[:, :1])
             else:
                 bos_mask = np.zeros_like(input_mask[:, :1])
@@ -299,9 +299,14 @@ def main(argv):
                 max_length=FLAGS.input_length,
                 return_tensors='np',
             )
+            input_tokens = inputs.input_ids
+            input_mask = inputs.attention_mask
+            if FLAGS.add_bos_token:
+                input_tokens[:, 0] = tokenizer.bos_token_id
+                input_mask[:, 0] = 1
             batch = dict(
-                input_tokens=inputs.input_ids,
-                attention_mask=inputs.attention_mask,
+                input_tokens=input_tokens,
+                attention_mask=input_mask,
             )
             with mesh:
                 output, sharded_rng = forward_generate(
@@ -353,6 +358,10 @@ def main(argv):
                         input_tokens = input_tokens[:, -FLAGS.input_length:]
                         attention_mask = attention_mask[:, -FLAGS.input_length:]
 
+                    if FLAGS.add_bos_token:
+                        input_tokens[:, 0] = tokenizer.bos_token_id
+                        attention_mask[:, 0] = 1
+
                     batch = dict(input_tokens=input_tokens, attention_mask=attention_mask)
 
                     with mesh:
@@ -379,7 +388,7 @@ def main(argv):
             return all_outputs
 
 
-    server = GPTJServer(FLAGS.lm_server)
+    server = ModelServer(FLAGS.lm_server)
     server.run()
 
 

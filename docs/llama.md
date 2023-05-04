@@ -103,8 +103,8 @@ The following command line options are supported for the serving script:
 * `top_p`: the top-p sampling probability.
 * `do_sample`: whether to use sampling or greedy decoding.
 * `num_beams`: the number of beams to use for beam search.
-* `loglikelihood_add_bos_token`: whether to add the bos token to the loglikelihood
-  calculation.
+* `add_bos_token`: whether to add the bos token for loglikelihood
+  calculation and text generation.
 * `load_llama_config`: the LLaMA configuration to use. Can be `7b`, `13b`, or
   `30b` or `65b`.
 * `load_checkpoint`: the checkpoint to load. See [the checkpointing documentation](checkpointing.md)
