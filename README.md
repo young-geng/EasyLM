@@ -20,8 +20,14 @@ training on Google Cloud TPU Pods.
 Currently, the following models are supported:
 * [LLaMA](https://arxiv.org/abs/2302.13971)
 * [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B)
-* [OPT](https://arxiv.org/abs/2205.01068)
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
+
+
+## Open LLaMA
+OpenLLaMA is our permissively licensed reproduction of LLaMA which can be used
+for commercial purposes. Check out the project main page [here](https://github.com/openlm-research/open_llama).
+The OpenLLaMA can serve as drop in replacement for the LLaMA weights in EasyLM.
+Please refer to the [LLaMA documentation](docs/llama.md) for more details.
 
 
 ## Koala

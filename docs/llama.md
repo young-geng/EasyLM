@@ -5,8 +5,11 @@ a JAX implementation of LLaMA, located at [EasyLM/models/llama](/EasyLM/models/l
 
 
 ## Converting the Official LLaMA Checkpoint to EasyLM Format
-The first step of using LLaMA with EasyLM is to convert the official LLaMA
-checkpoint to the EasyLM checkpoint format. To do so, use the following command:
+If you are using our [OpenLLaMA](https://github.com/openlm-research/open_llama),
+you can directly download the EasyLM checkpoints and skip this section.
+If you are using the official LLaMA weights from Meta, the first step of is to
+convert the official LLaMA checkpoint to the EasyLM checkpoint format. To do so,
+use the following command:
 
 ``` shell
 python -m EasyLM.models.llama.convert_torch_to_easylm.py \
