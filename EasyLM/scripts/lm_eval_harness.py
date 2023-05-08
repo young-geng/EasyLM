@@ -20,7 +20,6 @@ from EasyLM.serving import LMClient
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     tasks='wsc,piqa,winogrande,openbookqa,logiqa',
     shots=0,
-    batch_size=1,
     lm_client=LMClient.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
 )
@@ -32,42 +31,17 @@ class LMEvalHarnessInterface(LM):
         self.lm_client = lm_client
 
     def greedy_until(self, inputs):
-        results = []
-        batched_inputs = list(batched(inputs, FLAGS.batch_size))
-        for batch in tqdm(batched_inputs, desc='greedy_until', ncols=0):
-            prefix, until = zip(*batch)
-            results.extend(self.lm_client.greedy_until(prefix, until))
-        return results
+        prefix, until = zip(*inputs)
+        return self.lm_client.greedy_until(prefix, until)
 
     def loglikelihood_rolling(self, inputs):
-        loglikelihoods, is_greedys = [], []
-        batched_inputs = list(batched(inputs, FLAGS.batch_size))
-        for batch in tqdm(batched_inputs, desc='loglikelihood_rolling', ncols=0):
-            ll, greedy = self.lm_client.loglikelihood_rolling(batch)
-            loglikelihoods.extend(ll)
-            is_greedys.extend(greedy)
-        return list(zip(loglikelihoods, is_greedys))
+        loglikelihood, is_greedy = self.lm_client.loglikelihood_rolling(inputs)
+        return list(zip(loglikelihood, is_greedy))
 
     def loglikelihood(self, inputs):
-        loglikelihoods, is_greedys = [], []
-        batched_inputs = list(batched(inputs, FLAGS.batch_size))
-        for batch in tqdm(batched_inputs, desc='loglikelihood', ncols=0):
-            prefix, text = zip(*batch)
-            ll, greedy = self.lm_client.loglikelihood(prefix, text)
-            loglikelihoods.extend(ll)
-            is_greedys.extend(greedy)
-        return list(zip(loglikelihoods, is_greedys))
-
-
-def batched(iterator, batch_size):
-    batch = []
-    for example in iterator:
-        batch.append(example)
-        if len(batch) == batch_size:
-            yield batch
-            batch = []
-    if len(batch) > 0:
-        yield batch
+        prefix, text = zip(*inputs)
+        loglikelihood, is_greedy = self.lm_client.loglikelihood(prefix, text)
+        return list(zip(loglikelihood, is_greedy))
 
 
 def main(argv):
