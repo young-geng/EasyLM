@@ -344,6 +344,7 @@ class JsonDataset(object):
             config=self.config,
             index=self._index,
             file_loc=self._file_loc,
+            total_tokens=self._total_tokens,
         )
 
     def load_state_dict(self, state_dict):
