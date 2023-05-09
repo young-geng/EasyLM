@@ -308,16 +308,18 @@ class JsonDataset(object):
         token_buffer = []
         loss_mask_buffer = []
         last_time = 0.0
+        average_throughput = 0.0
         for tokens, loss_masks, loc, index in self.parallel_example_iterator():
             token_buffer.extend(tokens)
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size + 1:
                 self._total_tokens += chunk_size
+                average_throughput = 0.95 * average_throughput + 0.05 * chunk_size / (time.time() - last_time)
                 metrics = {
                     'dataset_file_loc': loc,
                     'dataset_example_index': index,
                     'dataset_total_tokens': self._total_tokens,
-                    'dataset_throughput_tps': chunk_size / (time.time() - last_time),
+                    'dataset_throughput_tps': average_throughput,
                 }
                 last_time = time.time()
                 batch = {
