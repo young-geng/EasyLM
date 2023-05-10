@@ -22,7 +22,7 @@ from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, next_rng, match_partition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
+    cross_entropy_loss_and_accuracy, global_norm, get_float_dtype_by_name,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
 )
@@ -33,6 +33,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mesh_dim='1,-1,1',
+    dtype='fp32',
     total_steps=10000,
     load_gptj_config='',
     update_gptj_config='',
@@ -93,7 +94,10 @@ def main(argv):
     ))
     if gptj_config.vocab_size < dataset.vocab_size:
         gptj_config.update(dict(vocab_size=dataset.vocab_size))
-    model = FlaxGPTJForCausalLMModule(gptj_config)
+
+    model = FlaxGPTJForCausalLMModule(
+        gptj_config, dtype=get_float_dtype_by_name(FLAGS.dtype)
+    )
 
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(
         FLAGS.optimizer,

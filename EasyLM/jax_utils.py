@@ -6,21 +6,16 @@ import re
 import dataclasses
 import random
 
-import dill
 import flax
 import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as PS
 from jax.sharding import Mesh
+from jax.experimental import mesh_utils
 from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
 from jax.experimental.pjit import pjit
 from jax.interpreters import pxla
 import numpy as np
-from absl import logging
-from flax import jax_utils
-from flax.training.train_state import TrainState
-from flax.core import FrozenDict
-import optax
 from transformers import FlaxLogitsWarper
 
 
@@ -128,7 +123,8 @@ def get_jax_mesh(axis_dims, names):
         dims = [int(x) for x in axis_dims.split(',')]
         dim_names = names
     assert len(dims) == len(names)
-    return Mesh(np.array(jax.devices()).reshape(dims), dim_names)
+    mesh_shape = np.arange(jax.device_count()).reshape(dims).shape
+    return Mesh(mesh_utils.create_device_mesh(mesh_shape), dim_names)
 
 
 def names_in_current_mesh(*names):

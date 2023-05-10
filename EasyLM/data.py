@@ -228,6 +228,7 @@ class JsonDataset(object):
         config.tokenizer_processes = 1
         config.tokenizer_parallel_chunk_size = 32
         config.tokenizer_parallel_batch_size = 1024
+        config.throughput_moving_average = 0.99
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -314,14 +315,17 @@ class JsonDataset(object):
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size + 1:
                 self._total_tokens += chunk_size
-                average_throughput = 0.95 * average_throughput + 0.05 * chunk_size / (time.time() - last_time)
+                average_throughput = (
+                    self.config.throughput_moving_average * average_throughput +
+                    (1.0 - self.config.throughput_moving_average) * chunk_size / (time.time() - last_time)
+                )
+                last_time = time.time()
                 metrics = {
                     'dataset_file_loc': loc,
                     'dataset_example_index': index,
                     'dataset_total_tokens': self._total_tokens,
                     'dataset_throughput_tps': average_throughput,
                 }
-                last_time = time.time()
                 batch = {
                     'input_tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                         self.config.batch_size, -1

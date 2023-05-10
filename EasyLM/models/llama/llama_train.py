@@ -22,9 +22,9 @@ from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, next_rng, match_partition_rules,
-    cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
+    cross_entropy_loss_and_accuracy, global_norm, get_float_dtype_by_name,
     set_random_seed, average_metrics, get_weight_decay_mask,
-    make_shard_and_gather_fns, with_sharding_constraint
+    make_shard_and_gather_fns, with_sharding_constraint,
 )
 from EasyLM.models.llama.llama_model import (
     LLaMAConfig, FlaxLLaMAForCausalLM, FlaxLLaMAForCausalLMModule
@@ -35,6 +35,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mesh_dim='1,-1,1',
+    dtype='fp32',
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -95,7 +96,10 @@ def main(argv):
     ))
     if llama_config.vocab_size < dataset.vocab_size:
         llama_config.update(dict(vocab_size=dataset.vocab_size))
-    model = FlaxLLaMAForCausalLMModule(llama_config)
+
+    model = FlaxLLaMAForCausalLMModule(
+        llama_config, dtype=get_float_dtype_by_name(FLAGS.dtype)
+    )
 
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(
         FLAGS.optimizer,
