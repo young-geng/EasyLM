@@ -352,7 +352,8 @@ class JsonDataset(object):
         )
 
     def load_state_dict(self, state_dict):
-        self.config = state_dict.get('config', self.config)
+        if 'config' in state_dict:
+            self.config.update(ConfigDict(state_dict['config']))
         self._index = state_dict.get('index', self.config.example_index_at_start)
         self._file_loc = state_dict.get('file_loc', self.config.start_seek_loc)
         self._total_tokens = state_dict.get('total_tokens', self.config.tokens_count_at_start)
