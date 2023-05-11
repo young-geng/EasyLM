@@ -204,22 +204,12 @@ def mse_loss(val, target, valid=None):
     return loss
 
 
-def cross_entropy_loss(logits, labels, smoothing_factor=0.):
-    num_classes = logits.shape[-1]
-    if labels.dtype == jnp.int32 or labels.dtype == jnp.int64:
-        labels = jax.nn.one_hot(labels, num_classes)
-    if smoothing_factor > 0.:
-        labels = labels * (1. - smoothing_factor) + smoothing_factor / num_classes
-    logp = jax.nn.log_softmax(logits, axis=-1)
-    return -jnp.mean(jnp.sum(logp * labels, axis=-1))
-
-
 def cross_entropy_loss_and_accuracy(logits, tokens, valid=None):
     if valid is None:
         valid = jnp.ones(tokens.shape[:2])
     valid = valid.astype(jnp.float32)
     valid_text_length = jnp.maximum(jnp.sum(valid, axis=-1), 1e-10)
-
+    logits = logits.astype(jnp.float32) # for numerical stability
     token_log_prob = jnp.squeeze(
         jnp.take_along_axis(
             jax.nn.log_softmax(logits, axis=-1),
@@ -256,9 +246,13 @@ def average_metrics(metrics):
 def get_float_dtype_by_name(dtype):
     return {
         'bf16': jnp.bfloat16,
+        'bfloat16': jnp.bfloat16,
         'fp16': jnp.float16,
+        'float16': jnp.float16,
         'fp32': jnp.float32,
+        'float32': jnp.float32,
         'fp64': jnp.float64,
+        'float64': jnp.float64,
     }[dtype]
 
 
