@@ -1,12 +1,6 @@
-import dataclasses
 import pprint
 from functools import partial
-import re
-import os
-from threading import Lock
 
-
-from tqdm import tqdm, trange
 import numpy as np
 import mlxu
 
@@ -14,10 +8,6 @@ import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as PS
-import flax
-from flax import linen as nn
-from flax.jax_utils import prefetch_to_device
-from flax.training.train_state import TrainState
 import optax
 from transformers import GenerationConfig, FlaxLogitsProcessorList
 

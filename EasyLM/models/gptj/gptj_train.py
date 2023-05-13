@@ -1,7 +1,5 @@
-import dataclasses
 import pprint
 from functools import partial
-import re
 
 from tqdm import tqdm, trange
 import numpy as np
@@ -11,11 +9,7 @@ import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit, with_sharding_constraint
 from jax.sharding import PartitionSpec as PS
-import flax
-from flax import linen as nn
-from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
-import optax
 
 from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer

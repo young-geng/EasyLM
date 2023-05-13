@@ -11,17 +11,13 @@ import jax
 import jax.numpy as jnp
 from jax.experimental.pjit import pjit, with_sharding_constraint
 from jax.sharding import PartitionSpec as PS
-import flax
-from flax import linen as nn
-from flax.jax_utils import prefetch_to_device
 from flax.training.train_state import TrainState
-import optax
 
 from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, next_rng, match_partition_rules,
+    JaxRNG, next_rng, match_partition_rules, get_float_dtype_by_name,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
@@ -35,6 +31,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     initialize_jax_distributed=False,
     mesh_dim='-1,1,1',
+    dtype='fp32',
     mask_token_probability=0.15,
     total_steps=10000,
     load_roberta_config='',
@@ -95,7 +92,10 @@ def main(argv):
         pad_token_id=dataset.tokenizer.pad_token_id,
         vocab_size=dataset.vocab_size,
     ))
-    model = FlaxRobertaForMaskedLMModule(roberta_config)
+
+    model = FlaxRobertaForMaskedLMModule(
+        roberta_config, dtype=get_float_dtype_by_name(FLAGS.dtype)
+    )
 
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(
         FLAGS.optimizer,
