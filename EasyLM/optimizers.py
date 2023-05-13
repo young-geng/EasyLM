@@ -74,7 +74,7 @@ class PalmOptimizerFactory(object):
         config.b2 = 0.99
         config.clip_gradient = 1.0
         config.weight_decay = 1e-4
-        config.bf16_momentum = True
+        config.bf16_momentum = False
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -133,8 +133,8 @@ class AdamWOptimizerFactory(object):
         config.b2 = 0.95
         config.clip_gradient = 1.0
         config.weight_decay = 1e-4
-        config.bf16_momentum = True
-        config.multiply_by_parameter_scale = True
+        config.bf16_momentum = False
+        config.multiply_by_parameter_scale = False
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
