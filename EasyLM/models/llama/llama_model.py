@@ -308,7 +308,8 @@ class RMSNorm(nn.Module):
         return x * jax.lax.rsqrt(jnp.square(x).mean(-1, keepdims=True) + self.eps)
 
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        output = self._norm(x.astype(self.dtype)).astype(self.dtype)
+        x = x.astype(jnp.promote_types(self.dtype, jnp.float32))
+        output = self._norm(x).astype(self.dtype)
         weight = jnp.asarray(self.weight, self.dtype)
         return output * weight
 
