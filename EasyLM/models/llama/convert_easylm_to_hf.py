@@ -45,6 +45,13 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
 
 
 LLAMA_STANDARD_CONFIGS = {
+    '3b': {
+        'dim': 3200,
+        'intermediate_size': 8640,
+        'n_layers': 26,
+        'n_heads': 32,
+        'norm_eps': 1e-6,
+    },
     '7b': {
         'dim': 4096,
         'intermediate_size': 11008,
@@ -96,10 +103,6 @@ def load_and_convert_checkpoint(path):
         tensor = float_tensor_to_dtype(tensor, FLAGS.dtype)
         torch_params[key] = torch.from_numpy(tensor)
     return torch_params
-
-
-def compute_intermediate_size(n):
-    return int(math.ceil(n * 8 / 3) + 255) // 256 * 256
 
 
 def read_json(path):
@@ -179,7 +182,7 @@ def write_model(loaded, model_path, model_size):
 
     config = LlamaConfig(
         hidden_size=dim,
-        intermediate_size=compute_intermediate_size(dim),
+        intermediate_size=params["intermediate_size"],
         num_attention_heads=params["n_heads"],
         num_hidden_layers=params["n_layers"],
         rms_norm_eps=params["norm_eps"],

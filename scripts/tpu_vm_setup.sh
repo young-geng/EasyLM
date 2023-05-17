@@ -21,6 +21,7 @@ flax==0.6.8
 optax==0.1.4
 chex==0.1.7
 distrax==0.1.3
+einops
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==1.12.1
 transformers==4.27.2
