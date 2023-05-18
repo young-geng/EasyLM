@@ -110,6 +110,13 @@ def set_random_seed(seed):
 
 
 def get_jax_mesh(axis_dims, names):
+    if axis_dims.startswith('!'):
+        # Allow splitting a physical mesh axis if needed
+        mesh_axis_splitting = True
+        axis_dims = axis_dims[1:]
+    else:
+        mesh_axis_splitting = False
+
     if ':' in axis_dims:
         dims = []
         dim_names = []
@@ -124,7 +131,11 @@ def get_jax_mesh(axis_dims, names):
         dim_names = names
     assert len(dims) == len(names)
     mesh_shape = np.arange(jax.device_count()).reshape(dims).shape
-    return Mesh(mesh_utils.create_device_mesh(mesh_shape), dim_names)
+    if mesh_axis_splitting:
+        physical_mesh = np.array(jax.devices()).reshape(mesh_shape)
+    else:
+        physical_mesh = mesh_utils.create_device_mesh(mesh_shape)
+    return Mesh(physical_mesh, dim_names)
 
 
 def names_in_current_mesh(*names):
