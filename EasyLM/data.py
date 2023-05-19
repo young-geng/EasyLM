@@ -169,7 +169,7 @@ class HuggingfaceDataset(object):
                         'input_tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
                             self.config.batch_size, -1
                         ),
-                        'taret_tokens': np.array(token_buffer[1:chunk_size + 1], dtype=np.int32).reshape(
+                        'target_tokens': np.array(token_buffer[1:chunk_size + 1], dtype=np.int32).reshape(
                             self.config.batch_size, -1
                         ),
                         'loss_masks': np.array(loss_mask_buffer[1:chunk_size + 1], dtype=np.float32).reshape(
