@@ -228,7 +228,7 @@ class JsonDataset(object):
         config.tokenizer_processes = 1
         config.tokenizer_parallel_chunk_size = 32
         config.tokenizer_parallel_batch_size = 1024
-        config.throughput_moving_average = 0.995
+        config.throughput_average_window_size = 200
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -309,19 +309,19 @@ class JsonDataset(object):
         token_buffer = []
         loss_mask_buffer = []
         last_time = 0.0
+        step_times = []
         start_time = time.time()
         start_tokens = self._total_tokens
-        average_throughput = 0.0
         for tokens, loss_masks, loc, index in self.parallel_example_iterator():
             token_buffer.extend(tokens)
             loss_mask_buffer.extend(loss_masks)
             while len(token_buffer) > chunk_size + 1:
                 self._total_tokens += chunk_size
-                average_throughput = (
-                    self.config.throughput_moving_average * average_throughput +
-                    (1.0 - self.config.throughput_moving_average) * chunk_size / (time.time() - last_time)
-                )
+                step_times.append(time.time() - last_time)
                 last_time = time.time()
+                if len(step_times) > self.config.throughput_average_window_size:
+                    step_times = step_times[-self.config.throughput_average_window_size:]
+                average_throughput = chunk_size / np.mean(step_times)
                 accumulated_throughput = (
                     (self._total_tokens - start_tokens) / (time.time() - start_time)
                 )
@@ -331,6 +331,7 @@ class JsonDataset(object):
                     'dataset_total_tokens': self._total_tokens,
                     'dataset_tps': average_throughput,
                     'dataset_accumulated_tps': accumulated_throughput,
+                    'dataset_average_tps': average_throughput,
                 }
                 batch = {
                     'input_tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
