@@ -504,7 +504,7 @@ class FlaxLLaMAAttention(nn.Module):
             dropout_rng=dropout_rng,
             dropout_rate=self.config.attn_pdrop,
             deterministic=deterministic,
-            dtype=self.dtype,
+            dtype=jnp.promote_types(self.dtype, jnp.float32),
             precision=self.precision,
         )
         attn_weights = with_sharding_constraint(attn_weights, PS(("dp", "fsdp"), "mp", None, None))

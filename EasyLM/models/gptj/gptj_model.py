@@ -557,7 +557,7 @@ class FlaxGPTJAttention(nn.Module):
             dropout_rng=dropout_rng,
             dropout_rate=self.config.attn_pdrop,
             deterministic=deterministic,
-            dtype=self.dtype,
+            dtype=jnp.promote_types(self.dtype, jnp.float32),
             precision=None,
         )
 
@@ -604,7 +604,10 @@ class FlaxGPTJBlock(nn.Module):
         hidden_size = self.config.hidden_size
         inner_dim = self.config.n_inner if self.config.n_inner is not None else 4 * hidden_size
 
-        self.ln_1 = nn.LayerNorm(epsilon=self.config.layer_norm_epsilon, dtype=self.dtype)
+        self.ln_1 = nn.LayerNorm(
+            epsilon=self.config.layer_norm_epsilon,
+            dtype=jnp.promote_types(self.dtype, jnp.float32)
+        )
         self.attn = FlaxGPTJAttention(self.config, dtype=self.dtype)
 
         self.mlp = FlaxGPTJMLP(self.config, inner_dim, dtype=self.dtype)
@@ -881,7 +884,10 @@ class FlaxGPTJModule(nn.Module):
         )
         self.dropout = nn.Dropout(rate=self.config.embd_pdrop)
         self.h = FlaxGPTJBlockCollection(self.config, dtype=self.dtype)
-        self.ln_f = nn.LayerNorm(epsilon=self.config.layer_norm_epsilon, dtype=self.dtype)
+        self.ln_f = nn.LayerNorm(
+            epsilon=self.config.layer_norm_epsilon,
+            dtype=jnp.promote_types(self.dtype, jnp.float32)
+        )
 
     def __call__(
         self,
