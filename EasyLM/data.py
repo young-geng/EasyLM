@@ -329,7 +329,6 @@ class JsonDataset(object):
                     'dataset_file_loc': loc,
                     'dataset_example_index': index,
                     'dataset_total_tokens': self._total_tokens,
-                    'dataset_tps': average_throughput,
                     'dataset_accumulated_tps': accumulated_throughput,
                     'dataset_average_tps': average_throughput,
                 }
