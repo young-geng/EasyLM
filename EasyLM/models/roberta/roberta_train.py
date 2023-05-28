@@ -35,6 +35,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     mask_token_probability=0.15,
     total_steps=10000,
     load_roberta_config='',
+    update_roberta_config='',
     load_checkpoint='',
     load_dataset_state='',
     log_freq=50,

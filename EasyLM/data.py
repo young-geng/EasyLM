@@ -182,12 +182,12 @@ class HuggingfaceDataset(object):
                     token_buffer = token_buffer[chunk_size:]
                     loss_mask_buffer = loss_mask_buffer[chunk_size:]
 
-    def __getstate__(self):
-        return self.config, self.tokenizer
+    def get_state_dict(self):
+        return dict(config=self.config)
 
-    def __setstate__(self, state):
-        config, tokenizer = state
-        self.__init__(config, tokenizer)
+    def load_state_dict(self, state_dict):
+        if 'config' in state_dict:
+            self.config.update(ConfigDict(state_dict['config']))
 
     @property
     def seq_length(self):
