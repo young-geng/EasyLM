@@ -207,14 +207,65 @@ def write_model(loaded, model_path, model_size):
 def write_tokenizer(tokenizer_path, input_tokenizer_path):
     print(f"Fetching the tokenizer from {input_tokenizer_path}.")
     os.makedirs(tokenizer_path, exist_ok=True)
-    write_json({}, os.path.join(tokenizer_path, "special_tokens_map.json"))
     write_json(
         {
-            "bos_token": "",
-            "eos_token": "",
-            "model_max_length": int(1e30),
+            "bos_token": {
+                "content": "<s>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
+            "eos_token": {
+                "content": "</s>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
+            "unk_token": {
+                "content": "<unk>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
+        },
+        os.path.join(tokenizer_path, "special_tokens_map.json")
+    )
+    write_json(
+        {
+            "add_bos_token": True,
+            "add_eos_token": False,
+            "model_max_length": 2048,
+            "pad_token": None,
+            "sp_model_kwargs": {},
             "tokenizer_class": "LlamaTokenizer",
-            "unk_token": "",
+            "clean_up_tokenization_spaces": False,
+            "bos_token": {
+                "__type": "AddedToken",
+                "content": "<s>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
+            "eos_token": {
+                "__type": "AddedToken",
+                "content": "</s>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
+            "unk_token": {
+                "__type": "AddedToken",
+                "content": "<unk>",
+                "lstrip": False,
+                "normalized": True,
+                "rstrip": False,
+                "single_word": False
+            },
         },
         os.path.join(tokenizer_path, "tokenizer_config.json"),
     )
