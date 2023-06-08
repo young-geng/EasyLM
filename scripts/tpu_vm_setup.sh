@@ -35,7 +35,7 @@ gcsfs==2022.11.0
 requests
 typing-extensions
 lm-eval==0.3.0
-mlxu==0.1.10
+mlxu==0.1.11
 sentencepiece
 pydantic
 fastapi
