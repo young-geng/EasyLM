@@ -3,6 +3,7 @@ from shutil import copyfile
 from typing import Any, Dict, List, Optional, Tuple, Union
 import json
 import tempfile
+from functools import partial
 
 import numpy as np
 import jax
@@ -171,7 +172,9 @@ class LLaMAConfig(PretrainedConfig):
         embd_pdrop=0.0,
         attn_pdrop=0.0,
         tie_word_embeddings=False,
-        gradient_checkpointing='nothing_saveable',
+        remat_block='nothing_saveable',
+        remat_attention='',
+        remat_mlp='',
         fcm_min_ratio=0.0,
         fcm_max_ratio=0.0,
         **kwargs,
@@ -188,7 +191,9 @@ class LLaMAConfig(PretrainedConfig):
         self.resid_pdrop = resid_pdrop
         self.embd_pdrop = embd_pdrop
         self.attn_pdrop = attn_pdrop
-        self.gradient_checkpointing = gradient_checkpointing
+        self.remat_block = remat_block
+        self.remat_attention = remat_attention
+        self.remat_mlp = remat_mlp
         self.fcm_min_ratio = fcm_min_ratio
         self.fcm_max_ratio = fcm_max_ratio
         super().__init__(
@@ -565,13 +570,26 @@ class FlaxLLaMABlock(nn.Module):
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self) -> None:
-        self.attention = FlaxLLaMAAttention(
+        attention_module = FlaxLLaMAAttention
+        mlp_module = FlaxLLaMAMLP
+        if self.config.remat_attention != '':
+            attention_module = remat(
+                FlaxLLaMAAttention, static_argnums=(3, 4, 5),
+                policy=get_gradient_checkpoint_policy(self.config.remat_attention)
+            )
+        if self.config.remat_mlp != '':
+            mlp_module = remat(
+                FlaxLLaMAMLP, static_argnums=(1,),
+                policy=get_gradient_checkpoint_policy(self.config.remat_mlp)
+            )
+
+        self.attention = attention_module(
             self.config,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             precision=self.precision,
         )
-        self.feed_forward = FlaxLLaMAMLP(
+        self.feed_forward = mlp_module(
             self.config,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
@@ -602,19 +620,19 @@ class FlaxLLaMABlock(nn.Module):
     ):
         attn_outputs = self.attention(
             self.attention_norm(hidden_states),
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            deterministic=deterministic,
-            init_cache=init_cache,
-            output_attentions=output_attentions,
-            fcm_mask=fcm_mask,
+            attention_mask,
+            position_ids,
+            deterministic,
+            init_cache,
+            output_attentions,
+            fcm_mask,
         )
         attn_output = attn_outputs[0]
         hidden_states = hidden_states + attn_output
 
         feed_forward_hidden_states = self.feed_forward(
             self.ffn_norm(hidden_states),
-            deterministic=deterministic,
+            deterministic,
         )
         hidden_states = hidden_states + feed_forward_hidden_states
 
@@ -776,14 +794,19 @@ class FlaxLLaMABlockCollection(nn.Module):
 
     def setup(self):
         block = FlaxLLaMABlock
-        if self.config.gradient_checkpointing != '':
-            FlaxLLaMACheckpointBlock = remat(
-                block, static_argnums=(3, 4, 5),
-                policy=get_gradient_checkpoint_policy(self.config.gradient_checkpointing)
+        if self.config.remat_block != '':
+            block = remat(
+                FlaxLLaMABlock, static_argnums=(3, 4, 5),
+                policy=get_gradient_checkpoint_policy(self.config.remat_block)
             )
-            block = FlaxLLaMACheckpointBlock
         self.blocks = [
-            block(self.config, name=str(i), dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision) for i in range(self.config.num_hidden_layers)
+            block(
+                self.config,
+                name=str(i),
+                dtype=self.dtype,
+                param_dtype=self.param_dtype,
+                precision=self.precision
+            ) for i in range(self.config.num_hidden_layers)
         ]
 
     def __call__(
