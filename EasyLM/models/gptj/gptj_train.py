@@ -15,7 +15,7 @@ from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, next_rng, match_partition_rules,
+    JaxRNG, JaxDistributedConfig, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, global_norm, get_float_dtype_by_name,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
@@ -25,7 +25,6 @@ from EasyLM.models.gptj.gptj_model import GPTJConfig, FlaxGPTJForCausalLMModule
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
-    initialize_jax_distributed=False,
     mesh_dim='1,-1,1',
     dtype='fp32',
     total_steps=10000,
@@ -45,13 +44,12 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     gptj=GPTJConfig.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
     log_all_worker=False,
+    jax_distributed=JaxDistributedConfig.get_default_config(),
 )
 
 
 def main(argv):
-    if FLAGS.initialize_jax_distributed:
-        jax.distributed.initialize()
-
+    JaxDistributedConfig.initialize(FLAGS.jax_distributed)
     variant = mlxu.get_user_flags(FLAGS, FLAGS_DEF)
     flags_config_dict = mlxu.user_flags_to_config_dict(FLAGS, FLAGS_DEF)
     logger = mlxu.WandBLogger(

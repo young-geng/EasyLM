@@ -17,7 +17,7 @@ from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
-    JaxRNG, next_rng, match_partition_rules, get_float_dtype_by_name,
+    JaxRNG, JaxDistributedConfig, next_rng, match_partition_rules, get_float_dtype_by_name,
     cross_entropy_loss_and_accuracy, named_tree_map, global_norm,
     set_random_seed, average_metrics, get_weight_decay_mask,
     make_shard_and_gather_fns, tree_apply
@@ -29,7 +29,6 @@ from EasyLM.models.roberta.roberta_model import (
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
-    initialize_jax_distributed=False,
     mesh_dim='-1,1,1',
     dtype='fp32',
     mask_token_probability=0.15,
@@ -50,13 +49,12 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     roberta=RobertaConfig.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
     log_all_worker=False,
+    jax_distributed=JaxDistributedConfig.get_default_config(),
 )
 
 
 def main(argv):
-    if FLAGS.initialize_jax_distributed:
-        jax.distributed.initialize()
-
+    JaxDistributedConfig.initialize(FLAGS.jax_distributed)
     variant = mlxu.get_user_flags(FLAGS, FLAGS_DEF)
     flags_config_dict = mlxu.user_flags_to_config_dict(FLAGS, FLAGS_DEF)
     logger = mlxu.WandBLogger(

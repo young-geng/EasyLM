@@ -14,7 +14,7 @@ from transformers import GenerationConfig, FlaxLogitsProcessorList
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
 from EasyLM.jax_utils import (
-    JaxRNG, next_rng, match_partition_rules, tree_apply,
+    JaxRNG, JaxDistributedConfig, next_rng, match_partition_rules, tree_apply,
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
@@ -37,12 +37,12 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_checkpoint='',
     tokenizer=LLaMAConfig.get_tokenizer_config(),
     lm_server=LMServer.get_default_config(),
+    jax_distributed=JaxDistributedConfig.get_default_config(),
 )
 
 
 def main(argv):
-    if FLAGS.initialize_jax_distributed:
-        jax.distributed.initialize()
+    JaxDistributedConfig.initialize(FLAGS.jax_distributed)
     set_random_seed(FLAGS.seed)
 
     prefix_tokenizer = LLaMAConfig.get_tokenizer(
