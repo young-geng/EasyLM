@@ -35,8 +35,8 @@ script to set up the TPU host.
 
 ## Modular Configuration
 EasyLM is designed to be highly modular. Typically, the training or inference
-script will combine togather various of modules to form a complete training or
-inferece process. Building on top of [MLXU](https://github.com/young-geng/mlxu),
+script will combine various modules to form a complete training or
+inference process. Building on top of [MLXU](https://github.com/young-geng/mlxu),
 EasyLM training or inference scripts can directly plug in the configuration of
 used modules into the command line flags of the script.
 
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
 By plugging in the configuration of the optimizer module into the FLAGS of the
 training script, we can directly control the optimizer module from the command
-line. For exmaple, if we want to use the AdamW optimizer with learning rate 1e-4,
+line. For example, if we want to use the AdamW optimizer with learning rate 1e-4,
 we can run the training script with the following command:
 
 ``` shell

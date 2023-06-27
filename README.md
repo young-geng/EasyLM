@@ -7,12 +7,12 @@ JAX's pjit functionality.
 
 Building on top of Hugginface's [transformers](https://huggingface.co/docs/transformers/main/en/index)
 and [datasets](https://huggingface.co/docs/datasets/index), this repo provides
-an easy to use and easy to customize codebase for training large langauge models
+an easy to use and easy to customize codebase for training large language models
 without the complexity in many other frameworks.
 
 
 EasyLM is built with JAX/Flax. By leveraging JAX's pjit utility, EasyLM is able
-to train large model that doesn't fit on a single accelerator by sharding
+to train large models that don't fit on a single accelerator by sharding
 the model weights and training data across multiple accelerators. Currently,
 EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
 training on Google Cloud TPU Pods.

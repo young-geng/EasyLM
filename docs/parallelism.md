@@ -1,6 +1,6 @@
 # Model, Data and Fully Sharded Data Parallelism
 EasyLM supports flexible model and data parallelism for training and serving
-large language models. Specifically, EasyLM uses the PJIT feature of JAX to
+large language models. Specifically, EasyLM uses the PJIT feature of JAX
 to parallelize the computation across multiple of accelerators or multiple hosts.
 To do so, all the accelerators are first grouped into a multi-dimensional mesh,
 where each axis represents a different type of parallelism. Currently, EasyLM
