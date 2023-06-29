@@ -67,6 +67,19 @@ script to set up the TPU host.
 The EasyLM documentations can be found in the [docs](docs/) directory.
 
 
+## Reference
+If you found EasyLM useful in your research or applications, please cite using the following BibTeX:
+```
+@software{geng2023easylm,
+  author = {Geng, Xinyang},
+  title = {EasyLM: A Simple And Scalable Training Framework for Large Language Models},
+  month = March,
+  year = 2023,
+  url = {https://github.com/young-geng/EasyLM}
+}
+```
+
+
 
 ## Credits
 * The LLaMA implementation is from [JAX_llama](https://github.com/Sea-Snell/JAX_llama)
