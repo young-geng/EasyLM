@@ -1,7 +1,7 @@
 #! /bin/bash
 
-# This is the example script to pretrain a 7B LLaMA model on a TPU v4 pod. These
-# hyperparameters are the ones we used to train the OpenLLaMA 7B model on
+# This is the example script to pretrain a 7B LLaMA model on a TPU v4-512 pod.
+# These hyperparameters are the ones we used to train the OpenLLaMA 7B model on
 # the RedPajama dataset. To use this on TPU pod, you need to run this
 # script on every hosts in a TPU pod.
 
@@ -13,7 +13,7 @@ export LIBTPU_INIT_ARGS='--xla_jf_spmd_threshold_for_windowed_einsum_mib=0 --xla
 
 
 python -m EasyLM.models.llama.llama_train \
-    --mesh_dim='1,-1,1' \
+    --mesh_dim='-1,64,1' \
     --dtype='fp32' \
     --total_steps=250000 \
     --log_freq=50 \
