@@ -35,6 +35,18 @@ from EasyLM.jax_utils import (
 
 
 LLAMA_STANDARD_CONFIGS = {
+    '1b': {
+        'vocab_size': 32000,
+        'hidden_size': 2048,
+        'intermediate_size': 5504,
+        'num_hidden_layers': 22,
+        'num_attention_heads': 16,
+        'max_sequence_length': 2048,
+        'initializer_range': 0.02,
+        'rms_norm_eps': 1e-6,
+        'use_cache': True,
+        'tie_word_embeddings': False,
+    },
     '3b': {
         'vocab_size': 32000,
         'hidden_size': 3200,

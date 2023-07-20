@@ -5,27 +5,57 @@ function _tpu_ips {
     tpu_project=$2
     tpu_name=$3
     gcloud alpha compute tpus tpu-vm describe $tpu_name --zone $tpu_zone --project $tpu_project | grep -oP 'externalIp: \K(.+)$'
+
 }
 
 function _tpu_create {
     tpu_zone=$1
     tpu_project=$2
-    tpu_cores=$3
-    tpu_name=$4
-    software_version='tpu-vm-base'
-    gcloud alpha compute tpus tpu-vm create \
-        $tpu_name \
-        --accelerator-type="v3-$tpu_cores" \
-        --version $software_version \
-        --zone $tpu_zone \
-        --project $tpu_project
+    tpu_gen=$3
+    tpu_cores=$4
+    tpu_name=$5
+    if [ "$tpu_gen" = "v3" ]; then
+        software_version='tpu-vm-base'
+    else
+        software_version='tpu-vm-v4-base'
+    fi
+
+    if [[ $tpu_cores =~ ^[0-9]+$ ]]; then
+        gcloud alpha compute tpus tpu-vm create \
+            $tpu_name \
+            --accelerator-type="$tpu_gen-$tpu_cores" \
+            --version $software_version \
+            --zone $tpu_zone \
+            --project $tpu_project
+    else
+        gcloud alpha compute tpus tpu-vm create \
+            $tpu_name \
+            --type="$tpu_gen" \
+            --topology="$tpu_cores" \
+            --version $software_version \
+            --zone $tpu_zone \
+            --project $tpu_project
+    fi
 }
 
 function _tpu_retry_create {
     while true; do
         _tpu_create "$@"
-        sleep 30s
+        sleep 120s
     done
+}
+
+function _tpu_cp_ssh_key {
+    tpu_zone=$1
+    tpu_project=$2
+    tpu_name=$3
+
+    gcloud alpha compute tpus tpu-vm scp \
+        $HOME/.ssh/authorized_keys \
+        $tpu_name:/home/$USER/.ssh/ \
+        --worker=all \
+        --project $tpu_project \
+        --zone $tpu_zone
 }
 
 function _tpu_setup {
@@ -55,8 +85,7 @@ function _tpu_check {
     tpu_ips=$(_tpu_ips $tpu_zone $tpu_project $tpu_name)
     for host in $tpu_ips; do
         echo "============== Checking host: $host =============="
-        ssh $host 'tmux capture-pane -pt launch'
-        echo "============== End of host: $host =============="
+        ssh $host 'tmux capture-pane -pt launch -S -2000'
         echo
         echo
     done
@@ -152,6 +181,7 @@ function _tpu_reboot {
     wait &> /dev/null
 }
 
+
 function tpu {
     trap "trap - SIGINT SIGTERM; return 1;" SIGINT SIGTERM
 
@@ -162,13 +192,14 @@ function tpu {
     tpu_zone='<tpu zone>'
     if [ "$1" = "<short name for your tpu project, you can define multiple ones>" ]; then
         tpu_project='<full name for your tpu project>'
+        tpu_zone='us-east1-d'
+        tpu_gen='v3'
     else
         echo "Invalid syntax!"
         trap - SIGINT SIGTERM
         return 1
     fi
     # =============== End of TPU Project Specific Definitions ===============
-
 
 
     if [ "$2" = "list" ]; then
@@ -179,12 +210,16 @@ function tpu {
         _tpu_ips $tpu_zone $tpu_project $3
     elif [ "$2" = "delete" ]; then
         gcloud alpha compute tpus tpu-vm delete $3 --zone $tpu_zone --project $tpu_project --quiet
+    elif [ "$2" = "delete_queued" ]; then
+            gcloud alpha compute tpus queued-resources delete $3 --project $tpu_project --zone $tpu_zone
     elif [ "$2" = "create" ]; then
-        _tpu_create $tpu_zone $tpu_project $3 $4
+        _tpu_create $tpu_zone $tpu_project $tpu_gen $3 $4
+    elif [ "$2" = "cp_ssh_key" ]; then
+        _tpu_cp_ssh_key $tpu_zone $tpu_project $3
     elif [ "$2" = "retry_create" ]; then
-        _tpu_retry_create $tpu_zone $tpu_project $3 $4
+        _tpu_retry_create $tpu_zone $tpu_project $tpu_gen $3 $4
     elif [ "$2" = "cs" ]; then
-        _tpu_create $tpu_zone $tpu_project $3 $4
+        _tpu_create $tpu_zone $tpu_project $tpu_gen $3 $4
         sleep 90s
         _tpu_setup $tpu_zone $tpu_project $4
     elif [ "$2" = "check" ]; then
@@ -206,6 +241,8 @@ function tpu {
         _tpu_ssh $tpu_zone $tpu_project $3 "$4"
     elif [ "$2" = "reboot" ]; then
         _tpu_reboot $tpu_zone $tpu_project $3
+    elif [ "$2" = "df" ]; then
+        _tpu_ssh $tpu_zone $tpu_project $3 'df -h | grep root'
     else
         echo "Invalid syntax!"
         trap - SIGINT SIGTERM
@@ -213,5 +250,6 @@ function tpu {
     fi
     trap - SIGINT SIGTERM
 }
+
 
 export -f tpu _tpu_ips _tpu_create _tpu_setup _tpu_check _tpu_copy _tpu_stop _tpu_launch _tpu_maintain _tpu_ssh _tpu_reboot
