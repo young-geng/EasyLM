@@ -22,15 +22,19 @@ Currently, the following models are supported:
 * [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B)
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
+## Discord Server
+We are running an unofficial Discord community (unaffiliated with Google) for discussion related to training LLMs in JAX. [Follow this link to join the Discord server](https://discord.gg/Rf4drG3Bhp). We have dedicated channels for several JAX based LLM frameworks, include EasyLM, [JaxSeq](https://github.com/Sea-Snell/JAXSeq), [Alpa](https://github.com/alpa-projects/alpa) and [Levanter](https://github.com/stanford-crfm/levanter).
 
-## OpenLLaMA
+
+## Models Trained with EasyLM
+### OpenLLaMA
 OpenLLaMA is our permissively licensed reproduction of LLaMA which can be used
 for commercial purposes. Check out the [project main page here](https://github.com/openlm-research/open_llama).
 The OpenLLaMA can serve as drop in replacement for the LLaMA weights in EasyLM.
 Please refer to the [LLaMA documentation](docs/llama.md) for more details.
 
 
-## Koala
+### Koala
 Koala is our new chatbot fine-tuned on top of LLaMA. If you are interested in
 our Koala chatbot, you can check out the [blogpost](https://bair.berkeley.edu/blog/2023/04/03/koala/)
 and [documentation for running it locally](docs/koala.md).
