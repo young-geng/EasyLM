@@ -545,6 +545,7 @@ class FlaxLLaMAAttention(nn.Module):
                 precision=self.precision,
                 query_chunk_size=self.config.scan_query_chunk_size,
                 key_chunk_size=self.config.scan_key_chunk_size,
+                dtype=jnp.promote_types(self.dtype, jnp.float32),
             )
         else:
             attn_weights = dot_product_attention_weights(
