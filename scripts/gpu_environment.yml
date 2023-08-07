@@ -1,45 +1,38 @@
 name: EasyLM
 channels:
-    - defaults
     - conda-forge
 dependencies:
-    - python=3.8
+    - python=3.10
     - pip
     - numpy
     - scipy
-    - numba
-    - h5py
     - matplotlib
-    - scikit-learn
+    - seaborn
     - jupyter
     - tqdm
-    - pytorch-cpu=1.13.0
-    - jax=0.4.7
-    - jaxlib=0.4.7=*cuda*
-    - cudatoolkit=11.7
-    - cudatoolkit-dev=11.7
-    - cudnn=8.4
+    - sentencepiece
     - pip:
-        - flax==0.6.8
-        - optax==0.1.4
-        - distrax==0.1.3
-        - transformers==4.27.2
-        - huggingface_hub==0.13.3
-        - datasets==2.9.0
-        - sentencepiece>=0.1.97
+        - -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+        - --extra-index-url https://download.pytorch.org/whl/cu118
+        - jax[cuda11_pip]==0.4.14
+        - flax==0.7.0
+        - optax==0.1.7
+        - distrax==0.1.4
+        - chex==0.1.82
+        - transformers==4.31.0
+        - torch==2.0.1
+        - huggingface_hub==0.16.4
+        - datasets==2.14.2
         - einops
-        - tensorflow==2.11.0
+        - tensorflow==2.11.1
         - dill
-        - seaborn
         - absl-py
-        - gtimer
-        - joblib
-        - wandb==0.13.5
+        - wandb
         - ml_collections
-        - gcsfs==2022.11.0
+        - gcsfs
         - requests
         - jupyter_http_over_ws
-        - lm-eval==0.3.0
+        - lm-eval
         - mlxu==0.1.11
         - pydantic
         - fastapi
