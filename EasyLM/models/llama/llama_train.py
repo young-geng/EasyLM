@@ -21,7 +21,7 @@ from EasyLM.jax_utils import (
     make_shard_and_gather_fns, with_sharding_constraint,
 )
 from EasyLM.models.llama.llama_model import (
-    LLaMAConfig, FlaxLLaMAForCausalLMModule
+    LLaMAConfig, FlaxLLaMAForCausalLMModule, blockwise_cross_entropy
 )
 
 
@@ -111,6 +111,14 @@ def main(argv):
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
+    if not FLAGS.llama.scan_loss:
+        cross_entropy_func = cross_entropy_loss_and_accuracy
+    else:
+        cross_entropy_func = partial(
+            blockwise_cross_entropy,
+            policy=FLAGS.llama.remat_loss,
+            chunk_size=FLAGS.llama.scan_loss_chunk_size,
+        )
     def train_step(train_state, rng, batch):
         rng_generator = JaxRNG(rng)
         batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
@@ -119,7 +127,7 @@ def main(argv):
                 params, batch['input_tokens'], deterministic=False,
                 rngs=rng_generator(llama_config.rng_keys()),
             ).logits
-            return cross_entropy_loss_and_accuracy(
+            return cross_entropy_func(
                 logits, batch['target_tokens'], batch['loss_masks']
             )
         grad_fn = jax.value_and_grad(loss_and_accuracy, has_aux=True)
@@ -141,7 +149,7 @@ def main(argv):
             train_state.params, batch['input_tokens'], deterministic=True,
             rngs=rng_generator(llama_config.rng_keys()),
         ).logits
-        loss, accuracy = cross_entropy_loss_and_accuracy(
+        loss, accuracy = cross_entropy_func(
             logits, batch['target_tokens'], batch['loss_masks']
         )
         metrics = dict(
