@@ -9,29 +9,23 @@ import flax.linen as nn
 
 
 '''
-Computing ffn blockwise without materializing the large hidden tensor.
+Computing ffn blockwise without materializing the large hidden tensor, training 4x longer sequences than the memory-efficient transformer.
 Blockwise parallel transformer https://arxiv.org/abs/2305.19370 Liu et al. 2023
 '''
-def blockwise_ffn(cell, inputs, chunk_size, deterministic, policy):
+def blockwise_ffn(remat_ffn, inputs, chunk_size, deterministic):
+    # remat_ffn: a rematerialized ffn
     inputs = rearrange(inputs, 'b (c n) d -> b c n d', c=chunk_size)
-    def ffn(cell, carry, hidden_states):
-        outputs = cell.forward_ffn(hidden_states, deterministic=deterministic)
+    def scan_ffn(remat_ffn, carry, hidden_states):
+        outputs = remat_ffn(hidden_states, deterministic=deterministic)
         return carry, outputs
-    ffn_remat = nn_partitioning.remat(
-        ffn,
-        variables="params",
-        split_rngs={"params": False, "dropout": True},
-        prevent_cse=False,
-        policy=policy,
-    )
     scan_axis = inputs.ndim - 2
     _, res = nn.scan(
-        ffn_remat,
+        scan_ffn,
         variable_broadcast="params",
         split_rngs={"params": False, "dropout": True},
         in_axes=scan_axis,
         out_axes=scan_axis,
-    )(cell, None, inputs)
+    )(remat_ffn, None, inputs)
     res = rearrange(res, 'b c n d -> b (c n) d')
     return res
 
@@ -39,11 +33,12 @@ def blockwise_ffn(cell, inputs, chunk_size, deterministic, policy):
 '''
 Compute attention blockwise without materializing the full attention matrix, initially proposed in memory-efficient transformer https://arxiv.org/abs/2112.05682 Rabe et al. 2021;
 flash attention https://arxiv.org/abs/2205.14135 Dao et al. 2022 proposes a CUDA efficient implementation;
-blockwise parallel transformer https://arxiv.org/abs/2305.19370 Liu et al. 2023 proposes blockwise computing both attention and FFN, enabling 4x longer sequences than memory-efficient transformer and fusion of attention and FFN.
+blockwise parallel transformer https://arxiv.org/abs/2305.19370 Liu et al. 2023 proposes blockwise computing both attention and FFN, enabling 4x longer sequences than memory-efficient/flash-attention and fusion of attention and FFN.
 '''
 def blockwise_attn(query, key, value, bias, deterministic,
         dropout_rng, attn_pdrop, causal, query_chunk_size,
-        key_chunk_size, dtype, policy, precision, float32_logits):
+        key_chunk_size, dtype, policy, precision, float32_logits,
+        prevent_cse):
     query = query / jnp.sqrt(query.shape[-1]).astype(dtype)
     q_len = query.shape[1]
     kv_len = key.shape[1]
@@ -71,7 +66,7 @@ def blockwise_attn(query, key, value, bias, deterministic,
     def _query_chunk_attention(args):
         query_chunk, query_chunk_idx = args
 
-        @functools.partial(jax.checkpoint, prevent_cse=False, policy=policy)
+        @functools.partial(jax.checkpoint, prevent_cse=prevent_cse, policy=policy)
         def summarize_chunk(carry, args):
             key_chunk, value_chunk, key_chunk_idx = args
             (numerator, denominator, prev_max_score) = carry
