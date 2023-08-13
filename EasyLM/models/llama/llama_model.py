@@ -30,7 +30,7 @@ from ml_collections import ConfigDict
 from ml_collections.config_dict import config_dict
 from mlxu import function_args_to_config, load_pickle, open_file
 
-from EasyLM.memory_efficient_attention import dot_product_attention_multihead as efficient_dot_product_attention
+from EasyLM.bpt import blockwise_ffn, blockwise_attn
 from EasyLM.jax_utils import (
     with_sharding_constraint, get_jax_mesh, get_gradient_checkpoint_policy
 )
@@ -187,12 +187,12 @@ class LLaMAConfig(PretrainedConfig):
         attn_pdrop=0.0,
         tie_word_embeddings=False,
         remat_block='nothing_saveable',
-        remat_attention='',
-        remat_mlp='',
+        remat_attention='nothing_saveable',
+        remat_mlp='nothing_saveable',
         scan_attention=False,
         scan_mlp=False,
         scan_query_chunk_size=1024,
-        scan_key_chunk_size=2048,
+        scan_key_chunk_size=1024,
         scan_mlp_chunk_size=1024,
         fcm_min_ratio=0.0,
         fcm_max_ratio=0.0,
@@ -528,25 +528,21 @@ class FlaxLLaMAAttention(nn.Module):
         # usual dot product attention
         if self.config.scan_attention:
             attn_weights = None
-            attention_mask = einops.rearrange(
-                combine_masks(attention_mask, fcm_mask),
-                '... s q k -> ... s 1 q k'
-            )
-            attn_output = efficient_dot_product_attention(
+            attn_output = blockwise_attn(
                 xq,
                 xk,
                 xv,
-                bias=attention_mask,
+                bias=attention_bias,
+                deterministic=deterministic,
                 dropout_rng=dropout_rng,
-                dropout_rate=self.config.attn_pdrop,
-                enable_dropout=not deterministic and self.config.attn_pdrop > 0.0,
-                rescale_logits=True,
-                float32_logits=True,
-                causal_mask=True,
-                dtype=self.dtype,
-                precision=self.precision,
+                attn_pdrop=self.config.attn_pdrop,
+                causal=True,
                 query_chunk_size=self.config.scan_query_chunk_size,
                 key_chunk_size=self.config.scan_key_chunk_size,
+                dtype=self.dtype,
+                policy=get_gradient_checkpoint_policy('nothing_saveable'),
+                precision=self.precision,
+                float32_logits=True,
             )
         else:
             attn_weights = dot_product_attention_weights(
@@ -680,27 +676,12 @@ class FlaxLLaMABlock(nn.Module):
         feed_forward_input = self.ffn_norm(hidden_states)
 
         if self.config.scan_mlp:
-            feed_forward_input = einops.rearrange(
+            feed_forward_hidden_states = blockwise_ffn(
+                self.feed_forward,
                 feed_forward_input,
-                '... (b s) d -> ... b s d',
-                b=self.config.scan_mlp_chunk_size
-            )
-
-            def mlp_forward(mlp, carry, x):
-                return None, mlp(x, deterministic)
-
-            scan_axis = feed_forward_input.ndim - 3
-
-            _, feed_forward_hidden_states = nn.scan(
-                mlp_forward,
-                variable_broadcast="params",
-                split_rngs={"params": False, "dropout": True},
-                in_axes=scan_axis,
-                out_axes=scan_axis,
-            )(self.feed_forward, None, feed_forward_input)
-            feed_forward_hidden_states = einops.rearrange(
-                feed_forward_hidden_states,
-                '... b s d -> ... (b s) d'
+                self.config.scan_mlp_chunk_size,
+                deterministic,
+                get_gradient_checkpoint_policy('nothing_saveable'),
             )
         else:
             feed_forward_hidden_states = self.feed_forward(
@@ -1079,7 +1060,7 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
 class FlaxLLaMAForCausalLM(FlaxLLaMAPreTrainedModel):
     module_class = FlaxLLaMAForCausalLMModule
 
-    def prepare_inputs_for_generation(self, input_ids, max_length, attention_mask: Optional[jnp.DeviceArray] = None):
+    def prepare_inputs_for_generation(self, input_ids, max_length, attention_mask: Optional[jax.Array] = None):
         # initializing the cache
         batch_size, seq_length = input_ids.shape
 
