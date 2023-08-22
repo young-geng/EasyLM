@@ -3,6 +3,7 @@ import pprint
 import time
 from functools import partial
 import json
+import base64
 from multiprocessing import Pool
 
 import h5py
@@ -59,6 +60,7 @@ class TextProcessor(object):
         config.add_bos_token = True
         config.add_eos_token = True
         config.prepend_text = ''
+        config.base64_token_dtype = 'i4'
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
         return config
@@ -101,6 +103,15 @@ class TextProcessor(object):
             elif field == '<|eos|>':
                 token_buffer.append(self.tokenizer.eos_token_id)
                 loss_mask_buffer.append(mask)
+            elif field.startswith('{') and field.endswith('}'):
+                field = field[1:-1]
+                # Base64 encoded raw tokens.
+                tokens = np.frombuffer(
+                    base64.b64decode(example[field]),
+                    dtype=self.config.base64_token_dtype
+                ).tolist()
+                token_buffer.extend(tokens)
+                loss_mask_buffer.extend([mask for _ in range(len(tokens))])
             else:
                 subfields = field.split('+')
                 text = self.config.subfield_separator.join(
@@ -134,6 +145,7 @@ class HuggingfaceDataset(object):
         config.seq_length = 1024
         config.batch_size = 8
         config.always_start_with_bos = False
+        config.batch_token_dtype = 'i4'
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -166,10 +178,10 @@ class HuggingfaceDataset(object):
                         'dataset_total_tokens': total_tokens,
                     }
                     batch = {
-                        'input_tokens': np.array(token_buffer[:chunk_size], dtype=np.int32).reshape(
+                        'input_tokens': np.array(token_buffer[:chunk_size], dtype=self.config.batch_token_dtype).reshape(
                             self.config.batch_size, -1
                         ),
-                        'target_tokens': np.array(token_buffer[1:chunk_size + 1], dtype=np.int32).reshape(
+                        'target_tokens': np.array(token_buffer[1:chunk_size + 1], dtype=self.config.batch_token_dtype).reshape(
                             self.config.batch_size, -1
                         ),
                         'loss_masks': np.array(loss_mask_buffer[1:chunk_size + 1], dtype=np.float32).reshape(
