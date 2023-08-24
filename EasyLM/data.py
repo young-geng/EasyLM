@@ -97,11 +97,16 @@ class TextProcessor(object):
             else:
                 mask = 1.0
 
-            if field == '<|bos|>':
-                token_buffer.append(self.tokenizer.bos_token_id)
-                loss_mask_buffer.append(mask)
-            elif field == '<|eos|>':
-                token_buffer.append(self.tokenizer.eos_token_id)
+            if field.startswith('<|') and field.endswith('|>'):
+                # Special tokens.
+                field = field[2:-2]
+                if field == 'bos':
+                    token_buffer.append(self.tokenizer.bos_token_id)
+                elif field == 'eos':
+                    token_buffer.append(self.tokenizer.eos_token_id)
+                else:
+                    # Token ID specified directly.
+                    token_buffer.append(int(field))
                 loss_mask_buffer.append(mask)
             elif field.startswith('{') and field.endswith('}'):
                 field = field[1:-1]
