@@ -1,5 +1,5 @@
-"""An implementation of Blockwise parallel transformer https://arxiv.org/abs/2305.19370
-
+"""
+An implementation of Blockwise parallel transformer https://arxiv.org/abs/2305.19370
 Also include a reference implementation of memory-efficient transformer https://arxiv.org/abs/2112.05682
 """
 
@@ -12,11 +12,12 @@ import jax.lax as lax
 import jax.numpy as jnp
 from einops import rearrange
 
-'''
-Computing ffn blockwise without materializing the large hidden tensor, training 4x longer sequences than the memory-efficient transformer.
+"""
+Computing ffn blockwise without materializing the large hidden tensor, training
+4x longer sequences than the memory-efficient transformer.
 Blockwise parallel transformer https://arxiv.org/abs/2305.19370 Liu et al. 2023
-'''
-def blockwise_ffn(remat_ffn, inputs, chunk_size, deterministic):
+"""
+def blockwise_ffn(remat_ffn, inputs, chunk_size=2048, deterministic=True):
     # remat_ffn: a rematerialized ffn with policy jax.checkpoint_policies.nothing_saveable()
     # inputs: (batch, seq_len, dim)
     # chunk_size: the chunk size to split the sequence
@@ -36,15 +37,29 @@ def blockwise_ffn(remat_ffn, inputs, chunk_size, deterministic):
     return res
 
 
-'''
-Compute attention blockwise without materializing the full attention matrix, initially proposed in memory-efficient transformer https://arxiv.org/abs/2112.05682 Rabe et al. 2021;
-flash attention https://arxiv.org/abs/2205.14135 Dao et al. 2022 proposes a CUDA efficient implementation;
-blockwise parallel transformer https://arxiv.org/abs/2305.19370 Liu et al. 2023 proposes blockwise computing both attention and FFN, enabling 4x longer sequences than memory-efficient/flash-attention and fusion of attention and FFN.
-'''
-def blockwise_attn(query, key, value, bias, deterministic,
-        dropout_rng, attn_pdrop, causal, query_chunk_size,
-        key_chunk_size, dtype, policy, precision, float32_logits,
-        prevent_cse):
+"""
+Compute attention blockwise without materializing the full attention matrix,
+initially proposed in memory-efficient transformer https://arxiv.org/abs/2112.05682 Rabe et al. 2021;
+flash attention https://arxiv.org/abs/2205.14135 Dao et al. 2022 proposes a CUDA
+efficient implementation; blockwise parallel transformer https://arxiv.org/abs/2305.19370
+Liu et al. 2023 proposes blockwise computing both attention and FFN, enabling 4x
+longer sequences than memory-efficient/flash-attention and fusion of attention and FFN.
+"""
+def blockwise_attn(
+        query, key, value,
+        bias=None,
+        deterministic=True,
+        dropout_rng=None,
+        attn_pdrop=0.0,
+        causal=True,
+        query_chunk_size=2048,
+        key_chunk_size=2048,
+        dtype=jnp.float32,
+        policy=jax.checkpoint_policies.nothing_saveable(),
+        precision=None,
+        float32_logits=True,
+        prevent_cse=True,
+    ):
     # query, key, value: (batch, seq_len, num_heads, dim_per_head)
     # bias: (batch, seq_len) can be used to mask out attention (e.g. padding)
     # causal: whether to use causal mask
