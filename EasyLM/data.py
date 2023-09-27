@@ -5,6 +5,7 @@ from functools import partial
 import json
 import base64
 from multiprocessing import Pool
+from pathlib import Path
 
 import h5py
 import mlxu
@@ -13,7 +14,9 @@ from ml_collections import ConfigDict
 from tqdm import tqdm, trange
 import numpy as np
 
-from datasets import load_dataset
+import datasets
+from datasets import load_dataset, DownloadConfig
+# datasets.config.DOWNLOADED_DATASETS_PATH = Path('/mnt/disks/persist/data_download/culturaX')
 
 
 class DatasetFactory(object):
@@ -151,6 +154,7 @@ class HuggingfaceDataset(object):
         config.batch_size = 8
         config.always_start_with_bos = False
         config.batch_token_dtype = 'i4'
+        config.num_proc = 8
 
         if updates is not None:
             config.update(ConfigDict(updates).copy_and_resolve_references())
@@ -163,7 +167,12 @@ class HuggingfaceDataset(object):
         self._tokenizer = tokenizer
         self._text_processor = text_processor
         self._dataset = load_dataset(
-            self.config.path, name, split=split, streaming=self.config.streaming
+            self.config.path, name, split=split, streaming=self.config.streaming,
+            num_proc=self.config.num_proc,
+            download_config=DownloadConfig(
+                # cache_dir='/mnt/disks/persist/data_download/culturaX',
+                num_proc=self.config.num_proc
+            )
         )
 
     def __iter__(self):
