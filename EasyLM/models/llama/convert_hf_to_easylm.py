@@ -182,11 +182,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--streaming",
         action="store_true",
-        default=True,
+        default=False,
         help="whether is model weight saved stream format",
     )
 
     args = parser.parse_args()
+    print(args.streaming)
 
     print(f"checkpoint_dir: {args.checkpoint_dir}")
     print(f"output_file: {args.output_file}")
