@@ -1,7 +1,7 @@
 # EasyLM Documentations
-EasyLM is a framework for pre-training, fine-tuning, and evaluating and serving
+EasyLM is a framework for pre-training, fine-tuning, evaluating, and serving
 large language models in JAX/Flax. EasyLM is designed to be easy to use by
-hiding the complexities of distributed model/data parallelism but exposing the
+hiding the complexities of distributed model/data parallelism while exposing the
 core training and inference details of large language models, making it easy to
 customize. EasyLM can scale up LLM training to hundreds of TPU/GPU accelerators
 without the need to write complicated distributed training code.
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
 By plugging in the configuration of the optimizer module into the FLAGS of the
 training script, we can directly control the optimizer module from the command
-line. For example, if we want to use the AdamW optimizer with learning rate 1e-4,
+line. For example, if we want to use the AdamW optimizer with a learning rate of 1e-4 (0.0001),
 we can run the training script with the following command:
 
 ``` shell
