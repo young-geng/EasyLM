@@ -1,19 +1,19 @@
 # Optimizers
-EasyLM provides a number of optimizers for training neural language models. The
+EasyLM provides several optimizers for training language models. The
 optimizers are implemented in the [optimizer.py](/EasyLM/optimizer.py)
 
 Currently, the following optimizers are supported:
-* AdamW
-* PaLM: the optimizer described in the PaLM paper
+* AdamW: The optimizer described in the [Decoupled Weight Decay Regularization paper](https://arxiv.org/abs/1711.05101)
+* PaLM: the optimizer described in the [PaLM: Scaling Language Modeling with Pathways paper](https://arxiv.org/abs/2204.02311)
 
 In addition to optimizer configurations, the optimizer module also provides
 support for gradient accumulation.
 
 
 ## Selecting Optimizer and Gradient Accumulation
-Optimizer type can be selected by setting the `type` field in the optimizer
+The optimizer type can be selected by setting the `type` field in the optimizer
 configuration. For example, to use the AdamW optimizer, we can set the `type` to
-`adamw` and configuring the `adamw_optimizer` subfields:
+`adamw` and configure the `adamw_optimizer` subfields. Here's an example:
 ```shell
 python train.py --optimizer.type=adamw --optimizer.adamw_optimizer.lr=1e-4
 ```
@@ -26,39 +26,39 @@ python train.py --optimizer.accumulate_gradient_steps=2
 ```
 
 The following options are supported for the optimizer module:
-* `type`: the optimizer type. Currently, `adamw` and `palm` are supported.
-* `adamw_optimizer`: the configuration for the AdamW optimizer
-* `palm_optimizer`: the configuration for the PaLM optimizer
-* `accumulate_gradient_steps`: the number of steps for gradient accumulation
+* `type`: The optimizer type. Currently, only `adamw` and `palm` are supported.
+* `adamw_optimizer`: The configuration for the AdamW optimizer
+* `palm_optimizer`: The configuration for the PaLM optimizer
+* `accumulate_gradient_steps`: The number of steps for gradient accumulation
 
 
 ## AdamW Optimizer
-The AdamW optimizer implements AdamW with liear learning rate warmup and cosine
+The AdamW optimizer implements AdamW with a linear learning rate warmup and a cosine
 learning rate decay. The following options are supported for the AdamW optimizer:
-* `init_lr`: the initial learning rate
-* `end_lr`: the final learning rate after decay
-* `lr`: the peak learning rate
-* `lr_warmup_steps`: the number of steps for linear learning rate warmup
-* `lr_decay_steps`: the number of steps for cosine learning rate decay
-* `b1`: the beta1 parameter for AdamW
-* `b2`: the beta2 parameter for AdamW
-* `clip_gradient`: the gradient clipping threshold
-* `weight_decay`: the weight decay parameter for AdamW
-* `bf16_momentum`: whether to use bf16 for momentum to save memory
-* `multiply_by_parameter_scale`: whether to multiply the gradient by parameter scale (as in adafactor)
+* `init_lr`: The initial learning rate
+* `end_lr`: The final learning rate after decay
+* `lr`: The peak learning rate
+* `lr_warmup_steps`: The number of steps for linear learning rate warmup
+* `lr_decay_steps`: The number of steps for cosine learning rate decay
+* `b1`: The beta1 parameter for AdamW
+* `b2`: The beta2 parameter for AdamW
+* `clip_gradient`: The gradient clipping threshold
+* `weight_decay`: The weight decay parameter for AdamW
+* `bf16_momentum`: Whether to use bf16 for momentum to save memory and speed up training
+* `multiply_by_parameter_scale`: Whether to multiply the gradient by the parameters scale (as in Adafactor)
 
 
 ## PaLM Optimizer
-The PaLM optimizer implements the optimizer described in the PaLM paper. The optimizer
-is essential adafactor with no-factoring and a inverse square root learning rate
+The PaLM optimizer implements the optimizer described in the [PaLM: Scaling Language Modeling with Pathways paper](https://arxiv.org/abs/2204.02311). The optimizer
+is essentially Adafactor with no factoring and an inverse square root learning rate
 decay and weight decay schedule. The following options are supported for the PaLM optimizer:
-* `lr`: the initial learning rate
-* `lr_warmup_steps`: the number of steps for constant learning rate warmup
-* `b1`: beta1 parameter for adafactor
-* `b2`: beta2 parameter for adafactor
-* `clip_gradient`: the gradient clipping threshold
-* `weight_decay`: the weight decay parameter
-* `bf16_momentum`: whether to use bf16 for momentum to save memory
+* `lr`: The initial learning rate
+* `lr_warmup_steps`: The number of steps for constant learning rate warmup
+* `b1`: The beta1 parameter for Adafactor
+* `b2`: The beta2 parameter for Adafactor
+* `clip_gradient`: The gradient clipping threshold
+* `weight_decay`: The weight decay parameter
+* `bf16_momentum`: Whether to use bf16 for momentum to save memory and speed up training
 
 
 
