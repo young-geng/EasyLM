@@ -1,17 +1,17 @@
 # EasyLM
-Large language models (LLMs) made easy, EasyLM is a one stop solution for
-pre-training, finetuning, evaluating and serving LLMs in JAX/Flax. EasyLM can
+Large language models (LLMs) made easy, EasyLM is a one-stop solution for
+pre-training, fine-tuning, evaluating, and serving LLMs in JAX/Flax. EasyLM can
 scale up LLM training to hundreds of TPU/GPU accelerators by leveraging
-JAX's pjit functionality.
+JAX's PJIT functionality.
 
 
 Building on top of Hugginface's [transformers](https://huggingface.co/docs/transformers/main/en/index)
 and [datasets](https://huggingface.co/docs/datasets/index), this repo provides
-an easy to use and easy to customize codebase for training large language models
-without the complexity in many other frameworks.
+an easy-to-use and easy-to-customize codebase for training large language models
+without the complexity seen in many other frameworks.
 
 
-EasyLM is built with JAX/Flax. By leveraging JAX's pjit utility, EasyLM is able
+EasyLM is built with JAX/Flax. By leveraging JAX's PJIT utility, EasyLM is able
 to train large models that don't fit on a single accelerator by sharding
 the model weights and training data across multiple accelerators. Currently,
 EasyLM supports multiple TPU/GPU training in a single host as well as multi-host
@@ -23,26 +23,26 @@ Currently, the following models are supported:
 * [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
 
 ## Discord Server
-We are running an unofficial Discord community (unaffiliated with Google) for discussion related to training LLMs in JAX. [Follow this link to join the Discord server](https://discord.gg/Rf4drG3Bhp). We have dedicated channels for several JAX based LLM frameworks, include EasyLM, [JaxSeq](https://github.com/Sea-Snell/JAXSeq), [Alpa](https://github.com/alpa-projects/alpa) and [Levanter](https://github.com/stanford-crfm/levanter).
+We are running an unofficial Discord community (unaffiliated with Google) for discussion related to training LLMs in JAX. [Follow this link to join the Discord server](https://discord.gg/Rf4drG3Bhp). We have dedicated channels for several JAX-based LLM frameworks, including EasyLM, [JaxSeq](https://github.com/Sea-Snell/JAXSeq), [Alpa](https://github.com/alpa-projects/alpa) and [Levanter](https://github.com/stanford-crfm/levanter).
 
 
 ## Models Trained with EasyLM
 ### OpenLLaMA
 OpenLLaMA is our permissively licensed reproduction of LLaMA which can be used
 for commercial purposes. Check out the [project main page here](https://github.com/openlm-research/open_llama).
-The OpenLLaMA can serve as drop in replacement for the LLaMA weights in EasyLM.
+OpenLLaMA can serve as a drop-in replacement for the LLaMA weights in EasyLM.
 Please refer to the [LLaMA documentation](docs/llama.md) for more details.
 
 
 ### Koala
 Koala is our new chatbot fine-tuned on top of LLaMA. If you are interested in
-our Koala chatbot, you can check out the [blogpost](https://bair.berkeley.edu/blog/2023/04/03/koala/)
+our Koala chatbot, you can check out the [blog post](https://bair.berkeley.edu/blog/2023/04/03/koala/)
 and [documentation for running it locally](docs/koala.md).
 
 
 ## Installation
 The installation method differs between GPU hosts and Cloud TPU hosts. The first
-step is to pull from GitHub.
+step is to pull this repository from GitHub.
 
 ``` shell
 git clone https://github.com/young-geng/EasyLM.git
@@ -68,11 +68,11 @@ script to set up the TPU host.
 
 
 ## [Documentations](docs/README.md)
-The EasyLM documentations can be found in the [docs](docs/) directory.
+EasyLM's documentation can be found in the [docs](docs/) directory.
 
 
 ## Reference
-If you found EasyLM useful in your research or applications, please cite using the following BibTeX:
+If you found EasyLM useful in your research or applications, please cite it using the following BibTeX:
 ```
 @software{geng2023easylm,
   author = {Geng, Xinyang},
@@ -87,6 +87,6 @@ If you found EasyLM useful in your research or applications, please cite using t
 
 ## Credits
 * The LLaMA implementation is from [JAX_llama](https://github.com/Sea-Snell/JAX_llama)
-* The JAX/Flax GPT-J and RoBERTa implementation are from [transformers](https://huggingface.co/docs/transformers/main/en/index)
+* The JAX/Flax GPT-J and RoBERTa implementation is from [transformers](https://huggingface.co/docs/transformers/main/en/index)
 * Most of the JAX utilities are from [mlxu](https://github.com/young-geng/mlxu)
 * The codebase is heavily inspired by [JAXSeq](https://github.com/Sea-Snell/JAXSeq)
