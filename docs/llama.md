@@ -131,5 +131,4 @@ python -m EasyLM.models.llama.convert_easylm_to_hf \
     --tokenizer_path='path/to/llama/tokenizer' \
     --model_size='13b' \  # '7b', '13b', '30b' or '65b' \
     --output_dir='path/to/output/huggingface/llama/checkpoint' \
-    --dtype='fp16' \ # 'fp16', 'fp32', or 'bf16' \
 ```
