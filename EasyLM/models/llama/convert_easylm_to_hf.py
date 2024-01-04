@@ -209,6 +209,7 @@ def write_model(loaded, model_path, model_size):
     print("Saving in the Transformers format.")
     model.save_pretrained(model_path)
     shutil.rmtree(tmp_model_path)
+    print("Done.")
 
 
 def write_tokenizer(tokenizer_path, input_tokenizer_path):
