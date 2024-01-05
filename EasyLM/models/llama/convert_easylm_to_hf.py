@@ -35,14 +35,13 @@ from transformers import LlamaConfig, LlamaForCausalLM
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.jax_utils import float_tensor_to_dtype
 
-
+# fp32, bf16, fp16 are supported
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_checkpoint='',
     tokenizer_path='',
     model_size='13b',
     output_dir='',
 )
-
 
 LLAMA_STANDARD_CONFIGS = {
     '1b': {
@@ -108,7 +107,7 @@ def load_and_convert_checkpoint(path):
         if match_keywords(key, ["kernel"], ["norm", 'ln_f']):
             tensor = tensor.T
         torch_params[key] = torch.tensor(
-            float_tensor_to_dtype(tensor, 'fp32'), dtype=torch.float16
+            float_tensor_to_dtype(tensor, 'fp32'), dtype=torch.float32
         )
     return torch_params
 
@@ -203,13 +202,14 @@ def write_model(loaded, model_path, model_size):
     gc.collect()
 
     print("Loading the checkpoint in a Llama model.")
-    model = LlamaForCausalLM.from_pretrained(tmp_model_path, torch_dtype=torch.float16)
+    model = LlamaForCausalLM.from_pretrained(tmp_model_path, torch_dtype=torch.float32)
     # Avoid saving this as part of the config.
     del model.config._name_or_path
 
     print("Saving in the Transformers format.")
     model.save_pretrained(model_path)
     shutil.rmtree(tmp_model_path)
+    print("Done.")
 
 
 def write_tokenizer(tokenizer_path, input_tokenizer_path):
@@ -292,7 +292,6 @@ def main(argv):
         model_path=FLAGS.output_dir,
         model_size=FLAGS.model_size,
     )
-
 
 if __name__ == "__main__":
     mlxu.run(main)

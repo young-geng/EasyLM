@@ -1,22 +1,22 @@
 # Koala
 Koala is a language model fine-tuned on top of LLaMA.
-[Check out the blogpost!](https://bair.berkeley.edu/blog/2023/04/03/koala/)
+[Check out the blog post!](https://bair.berkeley.edu/blog/2023/04/03/koala/)
 This documentation will describe the process of downloading, recovering the
 Koala model weights, and running the Koala chatbot locally.
 
 
-## Obtaining the Wegith Diff of Koala
-Due to the licence of the LLaMA model, we cannot directly release the fine-tuned
+## Obtaining the Weight Diff of Koala
+Due to the license of the LLaMA model, we cannot directly release the fine-tuned
 Koala model weights. Instead, we release the diff of weights, which can be used
-to recover the Koala model weights with the origina LLaMA model weights. The diff
+to recover the Koala model weights using the original LLaMA model weights. The diff
 weights can be downloaded from the following sources:
 * [HuggingFace Hub](https://huggingface.co/young-geng/koala/tree/main).
 * [Google Drive](https://drive.google.com/drive/folders/10f7wrlAFoPIy-TECHsx9DKIvbQYunCfl?usp=sharing).
 
 
 ## Recovering the Koala Model Weights
-The first step of recovering the Koala model weights is to obtain the original
-LLaMA model weights and convert it to EasyLM checkpoint format. To convert the weights,
+The first step in recovering the Koala model weights is to obtain the original
+LLaMA model weights and convert it to the EasyLM checkpoint format. To convert the weights,
 use the following command:
 
 ``` shell
@@ -26,7 +26,7 @@ python -m EasyLM.models.llama.convert_torch_to_easylm \
     --streaming=True
 ```
 
-This script will convert the official torch checkpoint from Meta to the
+This script will convert the official PyTorch checkpoint from Meta to the
 streaming checkpoint format used by EasyLM. For more information
 about the checkpoint format of EasyLM, see [the checkpointing documentation](checkpointing.md).
 
@@ -45,7 +45,7 @@ python -m EasyLM.scripts.diff_checkpoint \
 
 
 ## Serving the Koala Chatbot
-You can serve the LLaMA model with the LMServer of EasyLM. To do so, use the
+You can serve the LLaMA model using the LMServer of EasyLM. To do so, use the
 following command:
 
 ``` shell
@@ -72,7 +72,7 @@ Then navigate to `http://localhost:5009` to interact with the chatbot.
 
 
 ## Converting the Koala Weights to HuggingFace Transformers
-You can also convert the Koala model weights to HuggingFace Transformers format,
+You can also convert the Koala model weights to the HuggingFace Transformers format
 so it can be used with the LLaMA implementation in transformers. To do so, use
 the following command:
 
@@ -86,16 +86,16 @@ python -m EasyLM.models.llama.convert_easylm_to_hf \
 
 
 ## Koala Chatbot Prompts
-As can been seen in the serving command above, the Koala chatbot requires a
+As shown in the serving command above, the Koala chatbot requires a
 series of prompts to be prepended and appended to the user input in order to
 generate response correctly. Hence, to use the Koala weights in other frameworks,
 you will need to process the prompts accordingly.
 
-The beginning of prompt `BEGINNING OF CONVERSATION: ` is always prepended to
+The beginning of the prompt `BEGINNING OF CONVERSATION: ` is always prepended to
 every conversation. For each user input, the user prompt `USER: ` is prepended
 to the user input, a space ` ` is appended to the user input and then the
 language model prompt `GPT:` is appended to the user input. This whole string
-will be used as prompt input to the language model for generating the response.
+will be given as the initial prompt for the language model for generating the response.
 For example, in the first round of conversation, when the user inputs `Hello!`,
 the whole prompt for generating the first response is:
 
@@ -103,15 +103,15 @@ the whole prompt for generating the first response is:
 BEGINNING OF CONVERSATION: USER: Hello! GPT:
 ```
 
-After the language model generates the response, we append the response to the
-prompt and then append the EOS token `</s>` to the prompt. Suppose the language
+After the language model generates the response, we append its response to the
+prompt and then append the EOS (End Of String/Sentence) token `</s>` to the prompt. Suppose the language
 model generates the following response: `Hi! How can I help you?`, and for the
-next round, the user input is `What is the largest animal on earth?`. Then
+next round, the user input is `What is the largest animal on earth?`. Then,
 the whole prompt for generating the second response is:
 
 ```
 BEGINNING OF CONVERSATION: USER: Hello! GPT:Hi! How can I help you?</s>USER: What is the largest animal on earth? GPT:
 ```
 
-Note that due to the prompt and generated parts are tokenized separately, there's
-no space between the model prompt `GPT:` and the generated response.
+Please note that due to the prompt and generated parts being tokenized separately, there are
+no spaces between the model prompt `GPT:` and the generated response.
