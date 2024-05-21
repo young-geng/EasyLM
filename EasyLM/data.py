@@ -1,18 +1,11 @@
-import dataclasses
-import pprint
 import time
 from functools import partial
 import json
 import base64
 from multiprocessing import Pool
 
-import h5py
 import mlxu
-from ml_collections.config_dict import config_dict
-from ml_collections import ConfigDict
-from tqdm import tqdm, trange
 import numpy as np
-
 from datasets import load_dataset
 
 
@@ -21,15 +14,12 @@ class DatasetFactory(object):
 
     @staticmethod
     def get_default_config(updates=None):
-        config = ConfigDict()
+        config = mlxu.config_dict()
         config.type = 'huggingface'
         config.text_processor = TextProcessor.get_default_config()
         config.huggingface_dataset = HuggingfaceDataset.get_default_config()
         config.json_dataset = JsonDataset.get_default_config()
-
-        if updates is not None:
-            config.update(ConfigDict(updates).copy_and_resolve_references())
-        return config
+        return mlxu.update_config_dict(config, updates)
 
     @classmethod
     def load_dataset(cls, config, tokenizer, **kwargs):
@@ -53,7 +43,7 @@ class TextProcessor(object):
 
     @staticmethod
     def get_default_config(updates=None):
-        config = ConfigDict()
+        config = mlxu.config_dict()
         config.fields_from_example = ''
         config.fields = ''
         config.subfield_separator = ' '
@@ -61,9 +51,7 @@ class TextProcessor(object):
         config.add_eos_token = True
         config.prepend_text = ''
         config.base64_token_dtype = 'i4'
-        if updates is not None:
-            config.update(ConfigDict(updates).copy_and_resolve_references())
-        return config
+        return mlxu.update_config_dict(config, updates)
 
     def __init__(self, config, tokenizer):
         self.config = self.get_default_config(config)
@@ -142,7 +130,7 @@ class HuggingfaceDataset(object):
 
     @staticmethod
     def get_default_config(updates=None):
-        config = ConfigDict()
+        config = mlxu.config_dict()
         config.path = 'c4'
         config.name = 'en'
         config.split = 'train'
@@ -151,10 +139,7 @@ class HuggingfaceDataset(object):
         config.batch_size = 8
         config.always_start_with_bos = False
         config.batch_token_dtype = 'i4'
-
-        if updates is not None:
-            config.update(ConfigDict(updates).copy_and_resolve_references())
-        return config
+        return mlxu.update_config_dict(config, updates)
 
     def __init__(self, config, tokenizer, text_processor):
         self.config = self.get_default_config(config)
@@ -204,7 +189,7 @@ class HuggingfaceDataset(object):
 
     def load_state_dict(self, state_dict):
         if 'config' in state_dict:
-            self.config.update(ConfigDict(state_dict['config']))
+            self.config.update(mlxu.ConfigDict(state_dict['config']))
 
     @property
     def seq_length(self):
@@ -234,7 +219,7 @@ class JsonDataset(object):
 
     @staticmethod
     def get_default_config(updates=None):
-        config = ConfigDict()
+        config = mlxu.config_dict()
         config.path = ''
         config.seq_length = 1024
         config.batch_size = 8
@@ -246,10 +231,7 @@ class JsonDataset(object):
         config.tokenizer_parallel_chunk_size = 32
         config.tokenizer_parallel_batch_size = 1024
         config.throughput_average_window_size = 200
-
-        if updates is not None:
-            config.update(ConfigDict(updates).copy_and_resolve_references())
-        return config
+        return mlxu.update_config_dict(config, updates)
 
     def __init__(self, config, tokenizer, text_processor):
         self.config = self.get_default_config(config)
@@ -376,7 +358,7 @@ class JsonDataset(object):
 
     def load_state_dict(self, state_dict):
         if 'config' in state_dict:
-            self.config.update(ConfigDict(state_dict['config']))
+            self.config.update(mlxu.ConfigDict(state_dict['config']))
         self._index = state_dict.get('index', self.config.example_index_at_start)
         self._file_loc = state_dict.get('file_loc', self.config.start_seek_loc)
         self._total_tokens = state_dict.get('total_tokens', self.config.tokens_count_at_start)

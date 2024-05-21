@@ -14,7 +14,6 @@ import jax.numpy as jnp
 from jax.sharding import PartitionSpec as PS
 from jax.sharding import Mesh
 from jax.experimental import mesh_utils
-from jax.experimental.pjit import with_sharding_constraint as _with_sharding_constraint
 from jax.experimental.pjit import pjit
 from jax.interpreters import pxla
 import numpy as np
@@ -201,7 +200,7 @@ def with_sharding_constraint(x, partition_specs):
     """
     axis_names = get_names_from_parition_spec(partition_specs)
     if names_in_current_mesh(*axis_names):
-        x = _with_sharding_constraint(x, partition_specs)
+        x = jax.lax.with_sharding_constraint(x, partition_specs)
     return x
 
 

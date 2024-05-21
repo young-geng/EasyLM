@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as PS
 from flax.training.train_state import TrainState
+from transformers import AutoTokenizer
 
 from EasyLM.data import DatasetFactory
 from EasyLM.checkpoint import StreamingCheckpointer
@@ -17,11 +18,11 @@ from EasyLM.optimizers import OptimizerFactory
 from EasyLM.jax_utils import (
     JaxRNG, JaxDistributedConfig, next_rng, match_partition_rules,
     cross_entropy_loss_and_accuracy, global_norm, get_float_dtype_by_name,
-    set_random_seed, average_metrics, get_weight_decay_mask,
-    make_shard_and_gather_fns, with_sharding_constraint,
+    set_random_seed, average_metrics, make_shard_and_gather_fns,
+    with_sharding_constraint,
 )
 from EasyLM.models.llama.llama_model import (
-    LLaMAConfig, FlaxLLaMAForCausalLMModule
+    LLaMAConfigurator, FlaxLLaMAForCausalLMModule
 )
 
 
@@ -38,12 +39,12 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     save_model_freq=0,
     save_milestone_freq=0,
     eval_steps=0,
-    tokenizer=LLaMAConfig.get_tokenizer_config(),
+    tokenizer='openlm-research/open_llama_3b_v2',
     train_dataset=DatasetFactory.get_default_config(),
     eval_dataset=DatasetFactory.get_default_config(),
     optimizer=OptimizerFactory.get_default_config(),
     checkpointer=StreamingCheckpointer.get_default_config(),
-    llama=LLaMAConfig.get_default_config(),
+    llama=LLaMAConfigurator.get_default_config(),
     logger=mlxu.WandBLogger.get_default_config(),
     log_all_worker=False,
     jax_distributed=JaxDistributedConfig.get_default_config(),
@@ -61,7 +62,7 @@ def main(argv):
     )
     set_random_seed(FLAGS.seed)
 
-    tokenizer = LLaMAConfig.get_tokenizer(FLAGS.tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(FLAGS.tokenizer)
     dataset = DatasetFactory.load_dataset(FLAGS.train_dataset, tokenizer)
     if FLAGS.load_dataset_state != '':
         dataset.load_state_dict(mlxu.load_pickle(FLAGS.load_dataset_state))
@@ -73,30 +74,13 @@ def main(argv):
         eval_iterator = iter(eval_dataset)
 
     seq_length = dataset.seq_length
-
-    if FLAGS.load_llama_config != '':
-        llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
-    else:
-        llama_config = LLaMAConfig(**FLAGS.llama)
-
-    if FLAGS.update_llama_config != '':
-        llama_config.update(dict(eval(FLAGS.update_llama_config)))
-
-    llama_config.update(dict(
-        bos_token_id=dataset.tokenizer.bos_token_id,
-        eos_token_id=dataset.tokenizer.eos_token_id,
-    ))
-    if llama_config.vocab_size < dataset.vocab_size:
-        llama_config.update(dict(vocab_size=dataset.vocab_size))
+    llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
     model = FlaxLLaMAForCausalLMModule(
         llama_config, dtype=get_float_dtype_by_name(FLAGS.dtype)
     )
 
-    optimizer, optimizer_info = OptimizerFactory.get_optimizer(
-        FLAGS.optimizer,
-        get_weight_decay_mask(LLaMAConfig.get_weight_decay_exclusions())
-    )
+    optimizer, optimizer_info = OptimizerFactory.get_optimizer(FLAGS.optimizer)
 
     def create_trainstate_from_params(params):
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
@@ -107,7 +91,7 @@ def main(argv):
             input_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             position_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
             attention_mask=jnp.ones((4, seq_length), dtype=jnp.int32),
-            rngs=rng_generator(llama_config.rng_keys()),
+            rngs=rng_generator(LLaMAConfigurator.rng_keys()),
         )
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
@@ -117,7 +101,7 @@ def main(argv):
         def loss_and_accuracy(params):
             logits = model.apply(
                 params, batch['input_tokens'], deterministic=False,
-                rngs=rng_generator(llama_config.rng_keys()),
+                rngs=rng_generator(LLaMAConfigurator.rng_keys()),
             ).logits
             return cross_entropy_loss_and_accuracy(
                 logits, batch['target_tokens'], batch['loss_masks']
@@ -139,7 +123,7 @@ def main(argv):
         batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
         logits = model.apply(
             train_state.params, batch['input_tokens'], deterministic=True,
-            rngs=rng_generator(llama_config.rng_keys()),
+            rngs=rng_generator(LLaMAConfigurator.rng_keys()),
         ).logits
         loss, accuracy = cross_entropy_loss_and_accuracy(
             logits, batch['target_tokens'], batch['loss_masks']
@@ -152,7 +136,7 @@ def main(argv):
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
-        LLaMAConfig.get_partition_rules(), train_state_shapes
+        LLaMAConfigurator.get_partition_rules(), train_state_shapes
     )
 
     shard_fns, gather_fns = make_shard_and_gather_fns(
@@ -206,7 +190,7 @@ def main(argv):
             milestone=milestone,
         )
 
-    mesh = LLaMAConfig.get_jax_mesh(FLAGS.mesh_dim)
+    mesh = LLaMAConfigurator.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
         train_state, restored_params = None, None
         if FLAGS.load_checkpoint != '':
