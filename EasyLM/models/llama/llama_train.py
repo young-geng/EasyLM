@@ -30,6 +30,7 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
     mesh_dim='1,-1,1',
     dtype='fp32',
+    param_dtype='fp32',
     total_steps=10000,
     load_llama_config='',
     update_llama_config='',
@@ -77,7 +78,9 @@ def main(argv):
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
     model = FlaxLLaMAForCausalLMModule(
-        llama_config, dtype=get_float_dtype_by_name(FLAGS.dtype)
+        llama_config,
+        dtype=get_float_dtype_by_name(FLAGS.dtype),
+        param_dtype=get_float_dtype_by_name(FLAGS.param_dtype),
     )
 
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(FLAGS.optimizer)

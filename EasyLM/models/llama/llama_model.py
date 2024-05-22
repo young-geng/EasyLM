@@ -18,6 +18,7 @@ from flax.traverse_util import flatten_dict, unflatten_dict
 from flax.linen import partitioning as nn_partitioning
 import einops
 
+from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_flax_outputs import FlaxBaseModelOutput, FlaxCausalLMOutput
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 import mlxu
@@ -29,6 +30,9 @@ from EasyLM.jax_utils import (
 
 
 class LLaMAConfigurator(object):
+    """ Simplified LLaMA configuration. We start from a base model and
+        allow for easy updates to the configuration.
+    """
 
     @classmethod
     def get_default_config(cls, updates=None):
@@ -65,9 +69,10 @@ class LLaMAConfigurator(object):
         """ Apply updates on top of standard base model config. """
         standard_config = cls.get_standard_llama_config(config.base_model)
         for key, value in config.items():
-            if key != 'base_model' and value is not None:
+            if value is not None:
                 standard_config[key] = value
-        return standard_config
+
+        return PretrainedConfig.from_dict(standard_config)
 
     @classmethod
     def get_standard_llama_config(cls, model_name):
@@ -314,7 +319,7 @@ def apply_rotary_emb(
 
 
 class FlaxLLaMAAttention(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
@@ -391,7 +396,9 @@ class FlaxLLaMAAttention(nn.Module):
             cached_value.value = value
             num_updated_cache_vectors = query.shape[1]
             cache_index.value = cache_index.value + num_updated_cache_vectors
-            # causal mask for cached decoder self-attention: our single query position should only attend to those key positions that have already been generated and cached, not the remaining zero elements.
+            # Causal mask for cached decoder self-attention: our single query
+            # position should only attend to those key positions that have
+            # already been generated and cached, not the remaining zero elements.
             pad_mask = jnp.broadcast_to(
                 jnp.arange(max_length) < cur_index + num_updated_cache_vectors,
                 tuple(batch_dims) + (1, num_updated_cache_vectors, max_length),
@@ -518,7 +525,7 @@ class FlaxLLaMAAttention(nn.Module):
 
 
 class FlaxLLaMAMLP(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
@@ -559,7 +566,7 @@ class FlaxLLaMAMLP(nn.Module):
 
 
 class FlaxLLaMABlock(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
@@ -658,7 +665,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
 
     def __init__(
         self,
-        config: mlxu.ConfigDict,
+        config: PretrainedConfig,
         input_shape: Tuple = (1, 1),
         seed: int = 0,
         dtype: jnp.dtype = jnp.float32,
@@ -676,20 +683,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
         params_rng, dropout_rng = jax.random.split(rng)
         rngs = {"params": params_rng, "dropout": dropout_rng}
 
-        if self.config.add_cross_attention:
-            encoder_hidden_states = jnp.zeros(input_shape + (self.config.hidden_size,))
-            encoder_attention_mask = attention_mask
-            module_init_outputs = self.module.init(
-                rngs,
-                input_ids,
-                attention_mask,
-                position_ids,
-                encoder_hidden_states,
-                encoder_attention_mask,
-                return_dict=False,
-            )
-        else:
-            module_init_outputs = self.module.init(rngs, input_ids, attention_mask, position_ids, return_dict=False)
+        module_init_outputs = self.module.init(rngs, input_ids, attention_mask, position_ids, return_dict=False)
 
         random_params = module_init_outputs["params"]
 
@@ -759,7 +753,10 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
 
         inputs = {"params": params or self.params}
 
-        # if past_key_values are passed then cache is already initialized a private flag init_cache has to be passed down to ensure cache is used. It has to be made sure that cache is marked as mutable so that it can be changed by FlaxGPTJAttention module
+        # If past_key_values are passed then cache is already initialized a
+        # private flag init_cache has to be passed down to ensure cache is used.
+        # It has to be made sure that cache is marked as mutable so that it can
+        # be changed by FlaxGPTJAttention module
         if past_key_values:
             inputs["cache"] = past_key_values
             mutable = ["cache"]
@@ -793,7 +790,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
 
 
 class FlaxLLaMABlockCollection(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
@@ -824,7 +821,6 @@ class FlaxLLaMABlockCollection(nn.Module):
         init_cache: bool = False,
         output_attentions: bool = False,
         output_hidden_states: bool = False,
-        return_dict: bool = True,
     ):
         all_attentions = () if output_attentions else None
         all_hidden_states = () if output_hidden_states else None
@@ -871,7 +867,7 @@ class FlaxLLaMABlockCollection(nn.Module):
 
 
 class FlaxLLaMAModule(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
@@ -887,8 +883,18 @@ class FlaxLLaMAModule(nn.Module):
             param_dtype=self.param_dtype,
         )
         self.dropout = nn.Dropout(rate=self.config.embedding_dropout)
-        self.h = FlaxLLaMABlockCollection(self.config, dtype=self.dtype, param_dtype=self.param_dtype, precision=self.precision)
-        self.ln_f = RMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps, dtype=self.dtype, param_dtype=self.param_dtype)
+        self.h = FlaxLLaMABlockCollection(
+            self.config,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            precision=self.precision,
+        )
+        self.ln_f = RMSNorm(
+            self.config.hidden_size,
+            eps=self.config.rms_norm_eps,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+        )
 
     def __call__(
         self,
@@ -913,7 +919,6 @@ class FlaxLLaMAModule(nn.Module):
             init_cache=init_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]
@@ -940,7 +945,7 @@ class FlaxLLaMAModel(FlaxLLaMAPreTrainedModel):
 
 
 class FlaxLLaMAForCausalLMModule(nn.Module):
-    config: mlxu.ConfigDict
+    config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None

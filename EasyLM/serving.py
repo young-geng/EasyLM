@@ -369,7 +369,8 @@ class LMServer(object):
                 model_fn,
                 inputs=[chatbot, context_state, temp_slider],
                 outputs=[msg, clear, send, chatbot, context_state, regenerate],
-                queue=True
+                queue=True,
+                concurrency_limit=1,
             )
             send.click(
                 user_fn,
@@ -380,7 +381,8 @@ class LMServer(object):
                 model_fn,
                 inputs=[chatbot, context_state, temp_slider],
                 outputs=[msg, clear, send, chatbot, context_state, regenerate],
-                queue=True
+                queue=True,
+                concurrency_limit=1,
             )
             regenerate.click(
                 regenerate_fn,
@@ -391,7 +393,8 @@ class LMServer(object):
                 model_fn,
                 inputs=[chatbot, context_state, temp_slider],
                 outputs=[msg, clear, send, chatbot, context_state, regenerate],
-                queue=True
+                queue=True,
+                concurrency_limit=1,
             )
             clear.click(
                 clear_fn,
@@ -400,7 +403,7 @@ class LMServer(object):
                 queue=False
             )
 
-        gradio_chatbot.queue(concurrency_count=1)
+        gradio_chatbot.queue()
         return gradio_chatbot
 
     def run(self):

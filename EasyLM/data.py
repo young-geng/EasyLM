@@ -112,7 +112,7 @@ class TextProcessor(object):
                 )
                 if i == 0:
                     text = self.config.prepend_text + text
-                tokens = self.tokenizer.encode(text)
+                tokens = self.tokenizer.encode(text, add_special_tokens=False)
                 token_buffer.extend(tokens)
                 loss_mask_buffer.extend([mask for _ in range(len(tokens))])
 

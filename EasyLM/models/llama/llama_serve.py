@@ -9,7 +9,9 @@ import jax.numpy as jnp
 from jax.experimental.pjit import pjit
 from jax.sharding import PartitionSpec as PS
 import optax
-from transformers import GenerationConfig, FlaxLogitsProcessorList
+from transformers import (
+    AutoTokenizer, GenerationConfig, FlaxLogitsProcessorList
+)
 
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.serving import LMServer
@@ -18,13 +20,15 @@ from EasyLM.jax_utils import (
     set_random_seed, get_float_dtype_by_name, make_shard_and_gather_fns,
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
-from EasyLM.models.llama.llama_model import LLaMAConfig, FlaxLLaMAForCausalLM
+from EasyLM.models.llama.llama_model import (
+    LLaMAConfigurator, FlaxLLaMAForCausalLM
+)
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     seed=42,
-    initialize_jax_distributed=False,
     mesh_dim='1,-1,1',
+    param_dtype='bf16',
     dtype='bf16',
     input_length=1024,
     seq_length=2048,
@@ -33,9 +37,9 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     do_sample=True,
     num_beams=1,
     add_bos_token=True,
-    load_llama_config='',
     load_checkpoint='',
-    tokenizer=LLaMAConfig.get_tokenizer_config(),
+    tokenizer='openlm-research/open_llama_3b_v2',
+    llama=LLaMAConfigurator.get_default_config(),
     lm_server=LMServer.get_default_config(),
     jax_distributed=JaxDistributedConfig.get_default_config(),
 )
@@ -45,15 +49,17 @@ def main(argv):
     JaxDistributedConfig.initialize(FLAGS.jax_distributed)
     set_random_seed(FLAGS.seed)
 
-    prefix_tokenizer = LLaMAConfig.get_tokenizer(
+    prefix_tokenizer = AutoTokenizer.from_pretrained(
         FLAGS.tokenizer, truncation_side='left', padding_side='left'
     )
-    tokenizer = LLaMAConfig.get_tokenizer(
+    prefix_tokenizer.pad_token = prefix_tokenizer.eos_token
+    tokenizer = AutoTokenizer.from_pretrained(
         FLAGS.tokenizer, truncation_side='right', padding_side='right'
     )
+    tokenizer.pad_token = tokenizer.eos_token
+    llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
     with jax.default_device(jax.devices("cpu")[0]):
-        llama_config = LLaMAConfig.load_config(FLAGS.load_llama_config)
         _, params = StreamingCheckpointer.load_trainstate_checkpoint(
             FLAGS.load_checkpoint, disallow_trainstate=True
         )
@@ -62,14 +68,16 @@ def main(argv):
             llama_config,
             input_shape=(1, FLAGS.seq_length),
             seed=FLAGS.seed,
-            _do_init=False
+            _do_init=False,
+            dtype=get_float_dtype_by_name(FLAGS.dtype),
+            param_dtype=get_float_dtype_by_name(FLAGS.param_dtype),
         )
 
     model_ps = match_partition_rules(
-        LLaMAConfig.get_partition_rules(), params
+        LLaMAConfigurator.get_partition_rules(), params
     )
     shard_fns, _ = make_shard_and_gather_fns(
-        model_ps, get_float_dtype_by_name(FLAGS.dtype)
+        model_ps, get_float_dtype_by_name(FLAGS.param_dtype)
     )
 
     @partial(
@@ -87,10 +95,8 @@ def main(argv):
 
         logits = hf_model.module.apply(
             params, input_tokens, attention_mask=input_mask,
-            deterministic=True, rngs=rng_generator(llama_config.rng_keys()),
+            deterministic=True, rngs=rng_generator(LLaMAConfigurator.rng_keys()),
         ).logits
-        # if llama_config.n_real_tokens is not None:
-        #   logits = logits.at[:, :, llama_config.n_real_tokens:].set(-1e8)
         loglikelihood = -optax.softmax_cross_entropy_with_integer_labels(
             logits, output_tokens
         )
@@ -157,7 +163,7 @@ def main(argv):
         ).sequences[:, batch['input_tokens'].shape[1]:]
         return output, rng_generator()
 
-    mesh = LLaMAConfig.get_jax_mesh(FLAGS.mesh_dim)
+    mesh = LLaMAConfigurator.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
         params = tree_apply(shard_fns, params)
         sharded_rng = next_rng()

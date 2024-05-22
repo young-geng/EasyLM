@@ -32,63 +32,16 @@ from flax.traverse_util import flatten_dict
 import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 
+from EasyLM.models.llama.llama_model import LLaMAConfigurator
 from EasyLM.checkpoint import StreamingCheckpointer
 from EasyLM.jax_utils import float_tensor_to_dtype
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
     load_checkpoint='',
-    tokenizer_path='',
-    model_size='13b',
     output_dir='',
+    llama=LLaMAConfigurator.get_default_config(),
 )
-
-
-LLAMA_STANDARD_CONFIGS = {
-    '1b': {
-        'dim': 2048,
-        'intermediate_size': 5504,
-        'n_layers': 22,
-        'n_heads': 16,
-        'norm_eps': 1e-6,
-    },
-    '3b': {
-        'dim': 3200,
-        'intermediate_size': 8640,
-        'n_layers': 26,
-        'n_heads': 32,
-        'norm_eps': 1e-6,
-    },
-    '7b': {
-        'dim': 4096,
-        'intermediate_size': 11008,
-        'n_layers': 32,
-        'n_heads': 32,
-        'norm_eps': 1e-6,
-    },
-    '13b': {
-        'dim': 5120,
-        'intermediate_size': 13824,
-        'n_layers': 40,
-        'n_heads': 40,
-        'norm_eps': 1e-6,
-    },
-    '30b': {
-        'dim': 6656,
-        'intermediate_size': 17920,
-        'n_layers': 60,
-        'n_heads': 52,
-        'norm_eps': 1e-6,
-    },
-    '65b': {
-        'dim': 8192,
-        'intermediate_size': 22016,
-        'n_layers': 80,
-        'n_heads': 64,
-        'norm_eps': 1e-5,
-    },
-}
-
 
 def match_keywords(string, positives, negatives):
     for positive in positives:
@@ -123,24 +76,27 @@ def write_json(text, path):
         json.dump(text, f)
 
 
-def write_model(loaded, model_path, model_size):
+def permute(w, n_heads, input_dim, output_dim):
+    # permute for sliced rotary embedding
+    return w.view(
+        n_heads, output_dim // n_heads // 2, 2, input_dim
+    ).transpose(1, 2).reshape(output_dim, input_dim)
+
+
+def write_model(loaded, model_path):
     os.makedirs(model_path, exist_ok=True)
     tmp_model_path = os.path.join(model_path, "tmp")
     os.makedirs(tmp_model_path, exist_ok=True)
 
-    params = LLAMA_STANDARD_CONFIGS[model_size]
+    llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
-    n_layers = params["n_layers"]
-    n_heads = params["n_heads"]
-    dim = params["dim"]
+    n_layers = llama_config.num_hidden_layers
+    n_heads = llama_config.num_attention_heads
+    n_kv_heads = llama_config.num_key_value_heads
+    dim = llama_config.hidden_size
     dims_per_head = dim // n_heads
-    base = 10000.0
+    base = llama_config.rope_theta
     inv_freq = 1.0 / (base ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
-
-    # permute for sliced rotary
-    def permute(w):
-        return w.view(n_heads, dim // n_heads // 2, 2, dim).transpose(1, 2).reshape(dim, dim)
-
 
     param_count = 0
     index_dict = {"weight_map": {}}
@@ -148,10 +104,19 @@ def write_model(loaded, model_path, model_size):
         filename = f"pytorch_model-{layer_i + 1}-of-{n_layers + 1}.bin"
         state_dict = {
             f"model.layers.{layer_i}.self_attn.q_proj.weight": permute(
-                loaded[f"transformer.h.{layer_i}.attention.wq.kernel"]
+                loaded[f"transformer.h.{layer_i}.attention.wq.kernel"],
+                llama_config.num_attention_heads,
+                llama_config.hidden_size,
+                llama_config.hidden_size,
             ),
             f"model.layers.{layer_i}.self_attn.k_proj.weight": permute(
-                loaded[f"transformer.h.{layer_i}.attention.wk.kernel"]
+                loaded[f"transformer.h.{layer_i}.attention.wk.kernel"],
+                llama_config.num_key_value_heads,
+                llama_config.hidden_size,
+                llama_config.hidden_size // (
+                    llama_config.num_attention_heads
+                    // llama_config.num_key_value_heads
+                ),
             ),
             f"model.layers.{layer_i}.self_attn.v_proj.weight": loaded[f"transformer.h.{layer_i}.attention.wv.kernel"],
             f"model.layers.{layer_i}.self_attn.o_proj.weight": loaded[f"transformer.h.{layer_i}.attention.wo.kernel"],
@@ -189,11 +154,16 @@ def write_model(loaded, model_path, model_size):
     write_json(index_dict, os.path.join(tmp_model_path, "pytorch_model.bin.index.json"))
 
     config = LlamaConfig(
-        hidden_size=dim,
-        intermediate_size=params["intermediate_size"],
-        num_attention_heads=params["n_heads"],
-        num_hidden_layers=params["n_layers"],
-        rms_norm_eps=params["norm_eps"],
+        vocab_size=llama_config.vocab_size,
+        hidden_size=llama_config.hidden_size,
+        intermediate_size=llama_config.intermediate_size,
+        num_hidden_layers=llama_config.num_hidden_layers,
+        num_attention_heads=llama_config.num_attention_heads,
+        num_key_value_heads=llama_config.num_key_value_heads,
+        initializer_range=llama_config.initializer_range,
+        rms_norm_eps=llama_config.rms_norm_eps,
+        max_position_embeddings=llama_config.max_position_embeddings,
+        rope_theta=llama_config.rope_theta,
     )
     config.save_pretrained(tmp_model_path)
 
@@ -212,85 +182,11 @@ def write_model(loaded, model_path, model_size):
     shutil.rmtree(tmp_model_path)
 
 
-def write_tokenizer(tokenizer_path, input_tokenizer_path):
-    print(f"Fetching the tokenizer from {input_tokenizer_path}.")
-    os.makedirs(tokenizer_path, exist_ok=True)
-    write_json(
-        {
-            "bos_token": {
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "unk_token": {
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-        },
-        os.path.join(tokenizer_path, "special_tokens_map.json")
-    )
-    write_json(
-        {
-            "add_bos_token": True,
-            "add_eos_token": False,
-            "model_max_length": 2048,
-            "pad_token": None,
-            "sp_model_kwargs": {},
-            "tokenizer_class": "LlamaTokenizer",
-            "clean_up_tokenization_spaces": False,
-            "bos_token": {
-                "__type": "AddedToken",
-                "content": "<s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "eos_token": {
-                "__type": "AddedToken",
-                "content": "</s>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-            "unk_token": {
-                "__type": "AddedToken",
-                "content": "<unk>",
-                "lstrip": False,
-                "normalized": True,
-                "rstrip": False,
-                "single_word": False
-            },
-        },
-        os.path.join(tokenizer_path, "tokenizer_config.json"),
-    )
-    shutil.copyfile(input_tokenizer_path, os.path.join(tokenizer_path, "tokenizer.model"))
-
-
 def main(argv):
-    assert FLAGS.load_checkpoint != "" and FLAGS.output_dir != "" and FLAGS.tokenizer_path != ""
-    assert FLAGS.model_size in LLAMA_STANDARD_CONFIGS
-    write_tokenizer(
-        tokenizer_path=FLAGS.output_dir,
-        input_tokenizer_path=FLAGS.tokenizer_path,
-    )
+    assert FLAGS.load_checkpoint != "" and FLAGS.output_dir != ""
     write_model(
         load_and_convert_checkpoint(FLAGS.load_checkpoint),
         model_path=FLAGS.output_dir,
-        model_size=FLAGS.model_size,
     )
 
 
