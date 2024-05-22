@@ -8,14 +8,15 @@ a JAX implementation of LLaMA, located at [EasyLM/models/llama](/EasyLM/models/l
 If you are using our [OpenLLaMA](https://github.com/openlm-research/open_llama),
 you can directly download the EasyLM checkpoints and skip this section.
 If you are using the official LLaMA weights from Meta, the first step of is to
-convert the official LLaMA checkpoint to the EasyLM checkpoint format. To do so,
+convert the Huggingface transformers LLaMA checkpoint to the EasyLM checkpoint format. To do so,
 use the following command:
 
 ``` shell
-python -m EasyLM.models.llama.convert_torch_to_easylm \
-    --checkpoint_dir='path/to/torch/llama/checkpoint' \
+python -m EasyLM.models.llama.convert_hf_to_easylm \
+    --hf_model='path/to/transformers/llama/checkpoint' \
     --output_file='path/to/output/easylm/checkpoint' \
-    --streaming=True
+    --streaming=True \
+    --llama.base_model='llama_7b'
 ```
 
 This script will convert the official torch checkpoint from Meta to the
@@ -33,24 +34,19 @@ To fine-tune LLaMA, use the following command:
 ``` shell
 python -m EasyLM.models.llama.llama_train \
     --mesh_dim='1,-1,1' \
-    --load_llama_config='13b' \
+    --llama.base_model='llama_7b' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
 ```
 
 The following command line options are supported for the training script:
 * `seed`: The random seed to use for the training script.
-* `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
 * `mesh_dim`: The mesh dimensions for the data, fully sharded data and model parallelism.
   LLaMA uses 3D mesh so a comma separated list of 3 values are required. See
   [the parallelism documentation](parallelism.md) for more details.
+* `dtype`: the float dtype to use for the model activation. Can be `bf16` or `fp16` or `fp32`.
+* 'params_dtype': the float dtype to use for the model parameters. Can be `bf16` or `fp16` or `fp32`.
 * `total_steps`: The total number of training steps.
-* `load_llama_config`: the LLaMA configuration to use. Can be `7b`, `13b`, or
-  `30b` or `65b`.
-* `update_llama_config`: a string of python dictionary used to update the
-  LLaMA configuration. For example, to set the dropout probability to 0.1, you
-  can use the following value
-  `{"resid_pdrop": 0.05, "embd_pdrop": 0.05, "attn_pdrop": 0.05}`.
 * `load_checkpoint`: the checkpoint to load. See [the checkpointing documentation](checkpointing.md)
   for more details.
 * `load_dataset_state`: the dataset state to load. Rarely used.
@@ -62,7 +58,7 @@ The following command line options are supported for the training script:
 * `eval_steps`: the number of evaluation steps to run to evaluate the model. Setting
   to 0 will disable the evaluation. Using this requires the `eval_dataset` to be
   properly specified.
-* `tokenizer`: tokenizer configuration.
+* `tokenizer`: Huggingface transformers pretrained tokenizer.
 * `train_dataset`: training dataset configuration. See [the dataset documentation](dataset.md)
   for more details.
 * `eval_dataset`: evaluation dataset configuration. See [the dataset documentation](dataset.md)
@@ -71,11 +67,13 @@ The following command line options are supported for the training script:
   for more details.
 * `checkpointer`: checkpointer configuration. See [the checkpointing documentation](checkpointing.md)
   for more details.
-* `llama`: manually specify the LLaMA configuration. The avaiable configurations
+* `llama`: Specify the LLaMA configuration by starting from a base model. The avaiable configurations
   can be found in the [LLaMA model implementation](/EasyLM/models/llama/llama_model.py).
 * `logger`: logger configuration. For more details, see [the logger documentation](logger.md).
 * `log_all_workers`: whether to log the metrics from all workers in a multi-host
     setting. If set to `False`, only the metrics from the first worker will be logged.
+* `jax_distributed`: JAX distributed configuration. This only needs to be set when running
+  multi-host training on GPU.
 
 
 ## Serving LLaMA
@@ -85,18 +83,18 @@ following command:
 ``` shell
 python -m EasyLM.models.llama.llama_serve \
     --mesh_dim='1,1,-1' \
-    --load_llama_config='13B' \
+    --llama.base_model='llama_7b' \
     --load_checkpoint='params::path/to/easylm/llama/checkpoint' \
     ...
 ```
 
 The following command line options are supported for the serving script:
 * `seed`: The random seed to use for the serving script.
-* `initialize_jax_distributed`: whether to call `jax.distributed.initialize()`.
 * `mesh_dim`: The mesh dimensions for the data, fully sharded data and model parallelism.
   LLaMA uses 3D mesh so a comma separated list of 3 values are required. See
   [the parallelism documentation](parallelism.md) for more details.
-* `dtype`: the float dtype to use for the model. Can be `bf16` or `fp16` or `fp32`.
+* `dtype`: the float dtype to use for the model activation. Can be `bf16` or `fp16` or `fp32`.
+* `params_dtype`: the float dtype to use for the model parameters. Can be `bf16` or `fp16` or `fp32`.
 * `input_length`: the maximum length of the input sequence.
 * `seq_length`: the maximum length of the total sequence (input and output).
 * `top_k`: the number of top-k candidates to use for the sampling.
@@ -105,20 +103,14 @@ The following command line options are supported for the serving script:
 * `num_beams`: the number of beams to use for beam search.
 * `add_bos_token`: whether to add the bos token for loglikelihood
   calculation and text generation.
-* `load_llama_config`: the LLaMA configuration to use. Can be `7b`, `13b`, or
-  `30b` or `65b`.
+* `llama`: the LLaMA configuration to use.
 * `load_checkpoint`: the checkpoint to load. See [the checkpointing documentation](checkpointing.md)
   for more details.
-* `tokenizer`: tokenizer configuration.
+* `tokenizer`: Huggingface transformers pretrained tokenizer.
 * `lm_server`: the LM server configuration. See [the LM server documentation](serving.md)
   for more details.
-
-
-## LLaMA Tokenizer
-LLaMA uses a custom tokenizer that need to be loaded during training and serving.
-Specifically, you need to set the `tokenizer.vocab_file` command line option to
-to be the path of the `tokenizer.model` file that in the official LLaMA checkpoint.
-
+* `jax_distributed`: JAX distributed configuration. This only needs to be set when running
+  multi-host training on GPU.
 
 ## Converting the EasyLM LLaMA Checkpoint to Huggingface LLaMA Checkpoint
 To facilitate the interoperability with Huggingface transformers, EasyLM also
@@ -128,7 +120,6 @@ Pytorch LLaMA checkpoint. To do so, use the following command:
 ``` shell
 python -m EasyLM.models.llama.convert_easylm_to_hf \
     --load_checkpoint='params::path/to/easylm/checkpoint' \
-    --tokenizer_path='path/to/llama/tokenizer' \
-    --model_size='13b' \  # '7b', '13b', '30b' or '65b'
-    --output_dir='path/to/output/huggingface/llama/checkpoint'
+    --output_dir='path/to/output/huggingface/llama/checkpoint' \
+    --llama.base_model='llama_7b'
 ```

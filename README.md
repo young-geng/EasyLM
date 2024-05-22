@@ -19,8 +19,8 @@ training on Google Cloud TPU Pods.
 
 Currently, the following models are supported:
 * [LLaMA](https://arxiv.org/abs/2302.13971)
-* [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B)
-* [RoBERTa](https://huggingface.co/docs/transformers/model_doc/roberta)
+* [LLaMA 2](https://arxiv.org/abs/2307.09288)
+* [LLaMA 3](https://llama.meta.com/llama3/)
 
 ## Discord Server
 We are running an unofficial Discord community (unaffiliated with Google) for discussion related to training LLMs in JAX. [Follow this link to join the Discord server](https://discord.gg/Rf4drG3Bhp). We have dedicated channels for several JAX based LLM frameworks, include EasyLM, [JaxSeq](https://github.com/Sea-Snell/JAXSeq), [Alpa](https://github.com/alpa-projects/alpa) and [Levanter](https://github.com/stanford-crfm/levanter).
