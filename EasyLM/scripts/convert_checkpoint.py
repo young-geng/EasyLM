@@ -34,7 +34,7 @@ def main(argv):
         )
     else:
         params = float_to_dtype(params, FLAGS.float_dtype)
-        with mlxu.open_file(FLAGS.output, 'wb') as fout:
+        with mlxu.open_file(FLAGS.output_file, 'wb') as fout:
             fout.write(flax.serialization.msgpack_serialize(params, in_place=True))
 
 
