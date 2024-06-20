@@ -28,6 +28,6 @@ dependencies:
         - requests
         - lm-eval
         - pydantic
-        - fastapi
+        - fastapi==0.99.1
         - uvicorn
         - gradio
