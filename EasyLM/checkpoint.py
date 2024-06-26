@@ -182,9 +182,7 @@ class StreamingCheckpointer(object):
                 shard_fns=params_shard_fns,
                 remove_dict_prefix=('params', 'params'),
             )
-            restored_params = flax.core.frozen_dict.freeze(
-                {'params': restored_params}
-            )
+            restored_params = {'params': restored_params}
         elif load_type == 'params':
             # Load the params in the streaming format
             restored_params = cls.load_checkpoint(
@@ -192,9 +190,7 @@ class StreamingCheckpointer(object):
                 target=params_target,
                 shard_fns=params_shard_fns,
             )
-            restored_params = flax.core.frozen_dict.freeze(
-                {'params': restored_params}
-            )
+            restored_params = {'params': restored_params}
         elif load_type == 'flax_params':
             # Load the params in the standard flax format (non-streaming)
             # This requires the entire params to fit in memory
@@ -203,9 +199,7 @@ class StreamingCheckpointer(object):
                 target=params_target,
                 shard_fns=params_shard_fns
             )
-            restored_params = flax.core.frozen_dict.freeze(
-                {'params': restored_params}
-            )
+            restored_params = {'params': restored_params}
         else:
             raise ValueError(f'Invalid load_from type: {load_type}')
 

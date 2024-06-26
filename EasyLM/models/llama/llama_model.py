@@ -337,7 +337,7 @@ class FlaxLLaMAAttention(nn.Module):
             precision=self.precision,
         )
         self.wk = nn.Dense(
-            config.num_attention_heads * head_dim,
+            config.num_key_value_heads * head_dim,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
@@ -345,7 +345,7 @@ class FlaxLLaMAAttention(nn.Module):
             precision=self.precision,
         )
         self.wv = nn.Dense(
-            config.num_attention_heads * head_dim,
+            config.num_key_value_heads * head_dim,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
