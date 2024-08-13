@@ -75,7 +75,7 @@ class LLaMAConfigurator(object):
         config.num_hidden_layers = 26
         config.num_attention_heads = 32
         config.num_key_value_heads = 32
-        config.initializer_range = 1.0
+        config.initializer_range = 0.02
         config.rms_norm_eps = 1e-6
         config.max_position_embeddings = 2048
         config.rope_theta = 1e4
@@ -319,7 +319,9 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
         self.wk = nn.Dense(
@@ -327,7 +329,9 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
         self.wv = nn.Dense(
@@ -335,7 +339,9 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
         self.wo = nn.Dense(
@@ -343,7 +349,9 @@ class FlaxLLaMAAttention(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
 
@@ -516,13 +524,14 @@ class FlaxLLaMAMLP(nn.Module):
 
     def setup(self) -> None:
         config = self.config
-
         self.w1 = nn.Dense(
             config.intermediate_size,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
         self.w2 = nn.Dense(
@@ -530,7 +539,9 @@ class FlaxLLaMAMLP(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.intermediate_size)
+            ),
             precision=self.precision,
         )
         self.w3 = nn.Dense(
@@ -538,7 +549,9 @@ class FlaxLLaMAMLP(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                self.config.initializer_range / np.sqrt(config.hidden_size)
+            ),
             precision=self.precision,
         )
         self.dropout = nn.Dropout(rate=self.config.residue_dropout)
@@ -924,7 +937,9 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             use_bias=False,
-            kernel_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
+            kernel_init=jax.nn.initializers.normal(
+                stddev=self.config.initializer_range / np.sqrt(self.config.hidden_size)
+            ),
             precision=self.precision,
         )
 
