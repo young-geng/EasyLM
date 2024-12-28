@@ -272,18 +272,41 @@ class RMSNorm(nn.Module):
         weight = jnp.asarray(self.weight, self.dtype)
         return output * weight
 
+def _llama3_rotary_emb_freq_correction(freq: jax.Array) -> jax.Array:
+    # copied from https://github.com/huggingface/transformers/blob/5c75087aeee7081025370e10d1f571a11600f1ae/src/transformers/modeling_rope_utils.py#L310
+
+    # TODO: possibly introduce these parameters into the config
+    factor, low_freq_factor, high_freq_factor, old_context_len = 8, 1, 4, 8192
+
+    low_freq_wavelen = old_context_len / low_freq_factor
+    high_freq_wavelen = old_context_len / high_freq_factor
+
+    wavelen = 2 * jnp.pi / freq
+    # wavelen < high_freq_wavelen: do nothing
+    # wavelen > low_freq_wavelen: divide by factor
+    freq_llama = jnp.where(wavelen > low_freq_wavelen, freq / factor, freq)
+    # otherwise: interpolate between the two, using a smooth factor
+    smooth_factor = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
+    smoothed_freq = (1 - smooth_factor) * freq_llama / factor + smooth_factor * freq_llama
+    is_medium_freq = ~(wavelen < high_freq_wavelen) * ~(wavelen > low_freq_wavelen)
+    freq_llama = jnp.where(is_medium_freq, smoothed_freq, freq_llama)
+    return freq_llama
+
 
 def apply_rotary_emb(
         xq: jnp.ndarray,
         xk: jnp.ndarray,
         position_ids: jnp.ndarray,
         max_pos: int,
-        theta: float=10000.0
+        theta: float = 10000.0,
+        base_model: str = "",
 ):
     input_dtype = xq.dtype
     with jax.ensure_compile_time_eval():
         dim = xq.shape[-1]
         freqs = 1.0 / (theta ** (jnp.arange(0, dim, 2)[: (dim // 2)].astype(jnp.float32) / dim))
+        if base_model.startswith("llama3"):
+            freqs = _llama3_rotary_emb_freq_correction(freqs).astype(freqs.dtype)
         t = jnp.arange(max_pos)
         freqs = jnp.outer(t, freqs).astype(jnp.float32)
         sin, cos = jnp.sin(freqs), jnp.cos(freqs)
@@ -426,6 +449,8 @@ class FlaxLLaMAAttention(nn.Module):
         xq, xk = apply_rotary_emb(
             xq, xk, position_ids,
             max_pos=self.config.max_position_embeddings,
+            theta=self.config.rope_theta,
+            base_mode=self.config.base_model,
         )
 
         dropout_rng = None
